@@ -76,26 +76,6 @@ func NewKEON(n uint64, opt *Option) *KEON {
 	return kn.sizer(n)
 }
 
-// Info will read and return *KEON file header information.
-func Info(path string) (result struct {
-	Checksum, Count, Max uint64
-	Ok                   bool
-}) {
-
-	f, err := os.Open(path)
-	if err == nil {
-		buf := bufio.NewReader(f)
-		_, err = fmt.Fscanln(buf, &result.Checksum, &result.Count, &result.Max)
-		f.Close()
-	}
-
-	// validate the keon is readable and the header is valid
-	result.Ok = err == nil && result.Checksum > 0 && result.Max > 0
-
-	return
-
-}
-
 // LoadKEON a *KEON from disk and the checksum validation status.
 func LoadKEON(path string) (*KEON, bool) {
 
