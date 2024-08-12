@@ -1,0 +1,11 @@
+# ignore vscode
+.vscode
+
+# ignore file types
+**/.DS_Store
+**/~*
+
+# ignore directories
+_dev/
+testdata/
+sandbox/
