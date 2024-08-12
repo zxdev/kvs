@@ -129,28 +129,28 @@ Adding a sync.RWMutex around the Insert, Lookup, and Remove methods for concurre
 	kn := kvs.NewKEON(size, nil)
 	insert := kn.Insert()
 	lookup := kn.Lookup()
-  var mutex sync.RWMutex
+  	var mutex sync.RWMutex
 
 	t0 := time.Now()
 	for i := uint64(0); i < size; i++ {
-    mutex.Lock()
+	mutex.Lock()
 		if !insert([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}).Ok {
 			t.Log("insert failure", i)
 			t.FailNow()
 		}
-    mutex.Unlock()
+    	mutex.Unlock()
 	}
 	t.Log("insert", time.Since(t0))
 
 
 	t0 = time.Now()
 	for i := uint64(0); i < size; i++ {
-    mutex.RLock()
+    	mutex.RLock()
 		if !lookup([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}) {
 			t.Log("lookup failure", i)
 			t.FailNow()
 		}
-    mutex.RUnlock()
+    	mutex.RUnlock()
 	}
 	t.Log("lookup", time.Since(t0))
 
