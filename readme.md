@@ -9,8 +9,8 @@ This is a membership tesing hash table. It is similar to map[uint64]bool, but pr
 This is a key:value hash table that links the key:value unit. It is akin to a map[uint64]uint64, but provides faster performance, uses about 1/6th of the RAM, can be tuned and distributed with binary validation.
 
 * The basic implementation builds a static reference hash table that can be build from a set of data and can be and used locally or distributed; runs in memory.
-* To be MRSW would require an external wrapper to implement sync.RW to safeguard operations to prevent data races and should be size according to the intended use case.
-* Once created the table size is static.
+* To be MRSW would require an external wrapper to implement sync.RWMutex to safeguard existing data integrity operations and prevent data races due to the dynamic nature of the design and internal movement of items.
+* Once created, the table is a static sized container space, meaning the max capacity once specified can not be altered without creating a new a new container.
 
 The defaut configuration utilizes a cuckoo style hash table that has been optimized with and and internal shuffler that optimizes the table density while providing constant lookup performace expectations.
 
@@ -18,7 +18,7 @@ The defaut configuration utilizes a cuckoo style hash table that has been optimi
 
 # Options
 
-Modifying the ```shuffler``` (default 500) manages the shuffler large loop, so higher track movement trials means higher density at longer insert times when near capacity. Modifying the ```tracker``` (default 50) manages the cyclic movement detection within an individual track trial with the current bucket width (default 3) quickly aborts to a new track trial when cyclice movement has been detects. This cyclic tracker  has proven to be worth about ~2x performance gain.
+Modifying the ```shuffler``` (default 500) manages the internal item shuffle internally with cyclic track detection, so a higher track movement trials helps gain higher density at longer insert times when nearing capacity. Modifying the ```tracker``` (default 50) manages the cyclic movement detection size within an individual track trial with the current bucket width (default 3) for recurrent item movement back to to a prior location, when cyclinc movement is detected the shuffler quickly aborts to a new trial track. This cyclic tracker has proven to be worth about ~2x performance gain and setting around 17 x (the bucket size) seems to be ideal
 
 * Shuffler ```(default 500)```
 * Tracker ```(default 50)```
@@ -27,19 +27,21 @@ Shuffler and Tracker configure the .Insert() methods movement shuffler that make
 
 * Density ```(default 40)```
 
-The ```density math compaction factor``` is effectively adding a percentage of empty padding spaces while only using integer numerics to calculate it. This impacts insert performance and the default density ```40``` sets the compaction factor to 97.50%.
+The ```density math compaction factor``` is effectively adding a percentage of empty padding spaces while only using integer numerics to calculate it. This impacts insert performance and the default density ```25``` sets the compaction padding factor of +2.5%.
 
-  20 = 95.00% +depth/20 10,000 adds 500
-  40 = 97.50% +depth/40 10,000 adds 250
-  80 = 99.75% +depth/80 10,000 adds 125
-  100 = 100% 
+	5  = 0.5%   99.95% 10,000 adds 50 buckets
+	10 = 1.0%   99.00% 10,000 adds 100 buckets
+	15 = 1.5%   98.50% 10,000 adds 150 buckets
+	20 = 2.0%   98.00% 10,000 adsd 200 buckets
+	25 = 2.5%   97.50% 10,000 adds 250 buckets
+	1000 = 0.0% 100%   10,000 adds 0 buckets; perfect hash attempt
 
-The compaction ```density``` is currently coded to 97.5% (40) with the current defaults as this provides a reasonable trade off between memory, insert performance, and table utilization. The key shuffler and cyclic movement tracker will shuffle a randomly selected item within a scope of smaller cyclic tracks with monitored movements, and this has proven to be adequate up to 99.75% (80) table density on tables of 100MM items. Small tables such those with 1e6 items can be arranged into a minimal-perfect-hash table when table density is configured at (100) which essentially doubles in insertion time an increases the risk of MPH related failures which can be furter mitigated with additional tuning of shuffler and tracker. On failuare, give the random nature of the internal movement, it be may possible to simply rebuild to find an alternate solution.  
+The compaction ```density``` is currently coded to 97.5% (25) with the current defaults as this provides a reasonable trade off between memory, insert performance, and table utilization. The key shuffler and cyclic movement tracker will shuffle a randomly selected item within a scope of smaller cyclic tracks with monitored movements, and this has proven to be adequate up to 99.75% (80) table density on tables of 100MM items. Small tables such those with 1e6 items can be arranged into a minimal-perfect-hash table when table density is configured at (100) which essentially doubles in insertion time an increases the risk of MPH related failures which can be further mitigated with additional tuning of shuffler and tracker. On failuare, give the random nature of the internal movement, it be may possible to simply rebuild to find an alternate solution.  
 
 
 * Width ```(default 3)```
 
-This specifies is a three bucket wide per index arraged logically like in a row/bucket pattern:
+This specifies the number of buckets per index arraged logically like in a row/bucket pattern:
 
   ```shell 
   key|key|key
@@ -47,6 +49,49 @@ This specifies is a three bucket wide per index arraged logically like in a row/
   ...
   key|key|key
   ```
+
+## density and shuffler considerations
+
+The size requriment and performance tuning needs to consider the voulme of data, table density, and format. To determine optimal settings, tuning tests will need to be performed.
+
+Insert 10MM entires with padding factor of 2.5% (97.5% density). Memory requirement 78.201mb.
+
+```shell
+=== RUN   TestOption
+    kvs_test.go:89: insert 5.312242291s @density=25
+    kvs_test.go:98: lookup 1.065102708s
+    kvs_test.go:100: stats 10000000 10000000 100
+--- PASS: TestOption (6.38s)
+```
+
+Insert 10MM entries with padding facor of 0.04% (99.96% density) Memory requirement 76.324mb. bytes.
+```shell
+2024/08/16 18:54:34 3346667 10040001 4 10000000
+    kvs_test.go:89: insert 20.696769125s @density=4
+    kvs_test.go:98: lookup 1.066863625s
+    kvs_test.go:100: stats 10000000 10000000 100
+--- PASS: TestOption (21.76s)
+```
+
+Insert 100MM entries with padding facotr of 0.03% (99.97% density) with default shuffler of 500 this fails, however when increasing the Shuffer to 5000 the table is successfully created at 2x the time requirement for 1000 fewer padding bucket (8k) gain.
+```shell
+=== RUN   TestOption
+    kvs_test.go:89: insert 43.8051215s @density=3
+    kvs_test.go:98: lookup 1.151619667s
+    kvs_test.go:100: stats 10000000 10000000 100
+--- PASS: TestOption (44.96s)
+```
+
+Insert 100MM entries with padding factor of 0.03% (99.97% density) with default Shuffler:500 and Width:5 is successful and 4x faster with slight impact on lookup time due to table with. In effect, instead of 3x3=9 possible locations, the possible locatations shift from 3x5=15 (a gain of 40% more possible options).
+```shell
+=== RUN   TestOption
+    kvs_test.go:89: insert 7.168545125s @density=3
+    kvs_test.go:98: lookup 1.250907083s
+    kvs_test.go:100: stats 10000000 10000000 100
+--- PASS: TestOption (8.42s)
+```
+
+As the density increases the creation/insert time increases as the system moves toward a perfect hash table solution for the table data. The is a balance between space utiliztion, width, vs time of insertion, all these parameters can be tuned for the use case, as shown above.
 
 ---
 
@@ -82,18 +127,19 @@ kvs % go test -v -run KEON
 * 23MM lookup/sec.
 * 1e6 items in 7.63mb ram.
 
-## Keon MPH
+## Keon MPH (or very close)
 kvs.NewKEON(size, &kvs.Option{Density: 100})
 
 ```shell
 go test -v -run Option
 === RUN   TestOption
-    kvs_test.go:88: insert 670.870375ms
-    kvs_test.go:97: lookup 44.618333ms
-    kvs_test.go:99: stats 1000000 1000000 100
+    kvs_test.go:89: insert 578.899334ms @density=2
+    kvs_test.go:98: lookup 43.508791ms
+    kvs_test.go:100: stats 1000000 1000000 100
+--- PASS: TestOption (0.62s)
 ```
 
-* 1.4MM insert/sec @100% density
+* 1.7MM insert/sec @99.98% density and width:5
 * 23MM lookup/sec.
 * 1e6 items in 7.63mb ram; perfect hash.
 
@@ -102,22 +148,21 @@ go test -v -run Option
 Default Options 
 
 ```shell
-kvs % go test -v -run KEVA
+go test -v -run KEVA
 === RUN   TestKEVA
-    kvs_test.go:58: insert 582.784458ms
-    kvs_test.go:67: lookup 51.280666ms
+    kvs_test.go:58: insert 573.638458ms
+    kvs_test.go:67: lookup 50.265083ms
     kvs_test.go:69: stats 1000000 1000000 100
---- PASS: TestKEVA (0.63s)
+--- PASS: TestKEVA (0.62s)
 ```
-* 1.7MM insert/sec @97.5% density.
-* 19MM lookup/sec.
+* 1.7MM insert/sec @97.5% density
+* 20MM lookup/sec.
 * 1e6 items in 15.26mb ram.
 
 
 ---
 
-Scaling factor for go routine readers has been observed to approximately 1.5x per CPU, so in theory a 4 core machine could support 6 concurrent go routines with a theoretical rate of 
-reads of approximately 138MM/sec with 6 go routine readers accessing a KEON or 114MM/sec accessing a KEVA.
+Scaling factor for concurrent go routine readers has been observed to approximately 1.5x per CPU, so in theory a 4 core machine could support 6 concurrent go routines with a theoretical rate of reads of approximately 138MM/sec accessing a KEON or 114MM/sec accessing a KEVA.
 
 # MRSW
 
@@ -127,7 +172,7 @@ Adding a sync.RWMutex around the Insert, Lookup, and Remove methods for concurre
 
 	size := uint64(1000000)
 	kn := kvs.NewKEON(size, nil)
-	insert := kn.Insert()
+	insert := kn.Insert(false)
 	lookup := kn.Lookup()
   	var mutex sync.RWMutex
 

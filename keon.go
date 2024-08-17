@@ -165,20 +165,20 @@ func (kn *KEON) Save() error {
 
 */
 
-// sizer configures KEON.key slice based on size requirement and density
+// sizer configures KEON.key slice based on size requirement and density factor
 func (kn *KEON) sizer(n uint64) *KEON {
 
 	if n != 0 {
 		kn.max = n
 	}
 
-	kn.depth = kn.max / kn.width                              // calculate depth
-	kn.depth += kn.depth / kn.density                         // add extra density space
-	if kn.depth*kn.width < kn.max || kn.depth%kn.width != 0 { // ensure space requirements
+	kn.depth = kn.max / kn.width              // calculate depth
+	if kn.depth*kn.width < kn.max || n == 0 { // ensure space requirements
 		kn.depth++
 	}
+	kn.depth += (kn.depth * kn.density) / 1000 // add density factor padding space
+	kn.key = make([]uint64, kn.depth*kn.width)
 
-	kn.key = make([]uint64, kn.depth*kn.width) // +width padding
 	return kn
 }
 
@@ -329,10 +329,10 @@ func (kn *KEON) Insert(update bool) func(key []byte) struct{ Ok, Exist, NoSpace 
 
 			for {
 				rand.Read(random[:])
-				ix = idx[binary.LittleEndian.Uint64(random[:8])%kn.width] // select random altenate index to use
-				n = ix + (uint64(random[7]) % kn.width)                   // select random key to displace and swap
-				node = [2]uint64{ix, idx[kn.hloc]}                        // cyclic node generation; index and key
-				cyclic[node]++                                            // cyclic recurrent node movement tracking
+				ix = idx[binary.LittleEndian.Uint64(random[:8])%kn.hloc] // select random altenate index to use
+				n = ix + (uint64(random[7]) % kn.width)                  // select random key to displace and swap
+				node = [2]uint64{ix, idx[kn.hloc]}                       // cyclic node generation; index and key
+				cyclic[node]++                                           // cyclic recurrent node movement tracking
 				if cyclic[node] > uint8(kn.width) || len(cyclic) == kn.tracker {
 					break // reset cyclic path tracker and jump tracks by picking a new random index
 					// and key to displace as this gives us about ~2x faster performance boost by

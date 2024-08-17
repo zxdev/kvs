@@ -73,23 +73,24 @@ func TestKEVA(t *testing.T) {
 func TestOption(t *testing.T) {
 
 	size := uint64(1000000)
+	var density uint64 = 2 // 0.02% padding factor
 
-	kn := kvs.NewKEON(size, &kvs.Option{Density: 100})
+	kn := kvs.NewKEON(size, &kvs.Option{Density: density, Shuffler: 500, Width: 5})
 	insert := kn.Insert(false)
 	lookup := kn.Lookup()
 
 	t0 := time.Now()
 	for i := uint64(0); i < size; i++ {
-		if !insert([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}).Ok {
+		if insert([]byte{byte(i % 255), byte(i % 128), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}).NoSpace {
 			t.Log("insert failure", i)
 			t.FailNow()
 		}
 	}
-	t.Log("insert", time.Since(t0))
+	t.Log("insert", time.Since(t0), "@density=", density)
 
 	t0 = time.Now()
 	for i := uint64(0); i < size; i++ {
-		if !lookup([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}) {
+		if !lookup([]byte{byte(i % 255), byte(i % 128), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}) {
 			t.Log("lookup failure", i)
 			t.FailNow()
 		}
