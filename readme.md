@@ -25,7 +25,7 @@ Modifying the ```shuffler``` (default 500) manages the internal item shuffle int
 
 Shuffler and Tracker configure the .Insert() methods movement shuffler that makes space for the new itme by rotating current items into their alternate hash index location. 
 
-* Density ```(default 40)```
+* Density ```(default 25)``` 2.5% padding
 
 The ```density math compaction factor``` is effectively adding a percentage of empty padding spaces while only using integer numerics to calculate it. This impacts insert performance and the default density ```25``` sets the compaction padding factor of +2.5%.
 
@@ -73,7 +73,7 @@ Insert 10MM entries with padding facor of 0.04% (99.96% density) Memory requirem
 --- PASS: TestOption (21.76s)
 ```
 
-Insert 100MM entries with padding facotr of 0.03% (99.97% density) with default shuffler of 500 this fails, however when increasing the Shuffer to 5000 the table is successfully created at 2x the time requirement for 1000 fewer padding bucket (8k) gain.
+Insert 10MM entries with padding facotr of 0.03% (99.97% density) with default shuffler of 500 this fails, however when increasing the Shuffer to 5000 the table is successfully created at 2x the time requirement for 1000 fewer padding bucket (8k) gain.
 ```shell
 === RUN   TestOption
     kvs_test.go:89: insert 43.8051215s @density=3
@@ -82,7 +82,7 @@ Insert 100MM entries with padding facotr of 0.03% (99.97% density) with default 
 --- PASS: TestOption (44.96s)
 ```
 
-Insert 100MM entries with padding factor of 0.03% (99.97% density) with default Shuffler:500 and Width:5 is successful and 4x faster with slight impact on lookup time due to table with. In effect, instead of 3x3=9 possible locations, the possible locatations shift from 3x5=15 (a gain of 40% more possible options).
+Insert 10MM entries with padding factor of 0.03% (99.97% density) with default Shuffler:500 and Width:5 is successful and 4x faster with slight impact on lookup time due to table with. In effect, instead of 3x3=9 possible locations, the possible locatations shift from 3x5=15 (a gain of 40% more possible options).
 ```shell
 === RUN   TestOption
     kvs_test.go:89: insert 7.168545125s @density=3
