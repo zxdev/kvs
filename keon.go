@@ -41,9 +41,9 @@ type KEON struct {
 	path              string   // path to file
 	count, max        uint64   // count of items, and max items
 	depth, width      uint64   // depth and width to establish hash bucket locations [ key|key|key ]
-	hloc              uint64   // [4]uint64 indexer hash key location
 	density, shuffler uint64   // options
 	tracker           int      // options
+	hloc              uint64   // idx hash key location in [4]uint64; 3
 	key               []uint64 // key slice
 }
 
@@ -66,20 +66,21 @@ func NewKEON(n uint64, opt *Option) *KEON {
 	opt.configure()
 
 	var kn = &KEON{
+		max:      n,            // maximum size
 		width:    opt.Width,    // [ key|key|key ]
-		hloc:     3,            // static; .calculate(&idx) [4]uint64 hash key index location
 		density:  opt.Density,  // density pading factor
 		shuffler: opt.Shuffler, // shuffler large cycle
 		tracker:  opt.Tracker,  // shuffler cycling tracker
+		hloc:     3,            // idx hash location in [4]uint64 for kn.calulate
 	}
 
-	return kn.sizer(n)
+	return kn.sizer()
 }
 
 // LoadKEON a *KEON from disk and the checksum validation status.
 func LoadKEON(path string) (*KEON, bool) {
 
-	kn := &KEON{path: path}
+	kn := &KEON{path: path, hloc: 3}
 	kn.ext()
 
 	f, err := os.Open(kn.path)
@@ -96,7 +97,7 @@ func LoadKEON(path string) (*KEON, bool) {
 
 	var k [8]byte
 	var i uint64
-	kn.sizer(0) // kn.max configured via header load
+	kn.sizer()
 	for {
 		_, err = io.ReadFull(buf, k[:])
 		if err != nil {
@@ -166,14 +167,10 @@ func (kn *KEON) Save() error {
 */
 
 // sizer configures KEON.key slice based on size requirement and density factor
-func (kn *KEON) sizer(n uint64) *KEON {
+func (kn *KEON) sizer() *KEON {
 
-	if n != 0 {
-		kn.max = n
-	}
-
-	kn.depth = kn.max / kn.width              // calculate depth
-	if kn.depth*kn.width < kn.max || n == 0 { // ensure space requirements
+	kn.depth = kn.max / kn.width                   // calculate depth
+	if kn.depth*kn.width < kn.max || kn.max == 0 { // ensure space requirements
 		kn.depth++
 	}
 	kn.depth += (kn.depth * kn.density) / 1000 // add density factor padding space
@@ -221,7 +218,7 @@ func (kn *KEON) Ratio() uint64 {
 // Lookup key in *KEON.
 func (kn *KEON) Lookup() func(key []byte) bool {
 
-	var idx [4]uint64
+	var idx [4]uint64 // index locations
 	var n, i, j uint64
 
 	return func(key []byte) bool {
@@ -245,7 +242,7 @@ func (kn *KEON) Lookup() func(key []byte) bool {
 // Remove key from *KEON.
 func (kn *KEON) Remove() func(key []byte) bool {
 
-	var idx [4]uint64
+	var idx [4]uint64 // index locations
 	var n, i, j uint64
 
 	return func(key []byte) bool {
@@ -275,7 +272,7 @@ func (kn *KEON) Remove() func(key []byte) bool {
 //	NoSpace flag with at capacity or shuffler failure
 func (kn *KEON) Insert(update bool) func(key []byte) struct{ Ok, Exist, NoSpace bool } {
 
-	var idx [4]uint64
+	var idx [4]uint64 // index locations
 	var n, i, j uint64
 	var ix, jx uint64
 	var empty bool
@@ -324,7 +321,7 @@ func (kn *KEON) Insert(update bool) func(key []byte) struct{ Ok, Exist, NoSpace 
 		// outer loop composed of many short inner shuffles that succeed or fail quickly
 		// to cycle over many alternate short path swaps that abort on cyclic movements
 		var random [8]byte
-		for jx = 0; jx < kn.shuffler; jx++ { // 500 cycles of up to 50 smaller swap tracks
+		for jx = 0; jx < kn.shuffler; jx++ { // 500 cycles of up to ~17*3 smaller swap tracks
 			cyclic = make(map[[2]uint64]uint8, kn.tracker) // cyclic movement tracker
 
 			for {

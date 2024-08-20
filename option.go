@@ -14,7 +14,7 @@ type Option struct {
 	//	20 = 2.0%   98.00% 10,000 adsd 200 buckets
 	// 	25 = 2.5%   97.50% 10,000 adds 250 buckets
 	//	1000 = 0.0% 100%   10,000 adds 0 buckets; perfect hash
-	Density uint64 // 15 default
+	Density uint64 // 25 default
 
 	// Width is the representative size of the buckets at index
 	// key location for the hash bucket blocks [ key|key|key ]
@@ -22,12 +22,12 @@ type Option struct {
 
 	// Shuffler and Tracker configure the .Insert(bool) methods internal dynamic
 	// item shuffler that makes space by rotating items into alternate locations
-	Shuffler uint64 // 500 shuffle cycles of up Tracker movements
+	Shuffler uint64 // 500 shuffle cycles of up to max Tracked movements
 	Tracker  int    // (~17*width) possible movements per shuffle; cyclic detection aborts track
 
 }
 
-// confgure sets default assurances
+// confgure sets the default assurances
 func (c *Option) configure() {
 
 	if c.Density == 0 {

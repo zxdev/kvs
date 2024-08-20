@@ -256,3 +256,75 @@ func TestFileDB2(t *testing.T) {
 	t.Log("keon: summary", count, time.Since(t0))
 
 }
+
+func TestAlexa(t *testing.T) {
+
+	file := "alexa-5129"
+	path := filepath.Join(os.Getenv("HOME"), "Development", "testdata", file)
+
+	f, _ := os.Open(path)
+	defer f.Close()
+
+	var count uint64
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		count++
+	}
+	f.Seek(0, 0)
+
+	kv := kvs.NewKEON(count, &kvs.Option{Density: 3})
+	insert := kv.Insert(false)
+	scanner = bufio.NewScanner(f)
+	t0 := time.Now()
+	for scanner.Scan() {
+		if r := insert(scanner.Bytes()); !r.Ok {
+			t.Log(scanner.Text(), r)
+			t.FailNow()
+		}
+	}
+	t.Log("insert", time.Since(t0))
+	t.Log("write sandbox/alexa")
+	kv.Write("sandbox/alexa")
+	t.Log(kv.Cap(), kv.Len())
+
+	f.Seek(0, 0)
+	lookup := kv.Lookup()
+	scanner = bufio.NewScanner(f)
+	t0 = time.Now()
+	for scanner.Scan() {
+		if !lookup(scanner.Bytes()) {
+			t.Log("fail -", scanner.Text())
+			t.FailNow()
+		}
+	}
+	t.Log("lookup", time.Since(t0))
+
+}
+
+func TestAlexaKeon(t *testing.T) {
+
+	file := "alexa-5129"
+	path := filepath.Join(os.Getenv("HOME"), "Development", "testdata", file)
+
+	f, _ := os.Open(path)
+	defer f.Close()
+
+	t.Log("load sandbox/alexa")
+	kv, ok := kvs.LoadKEON("sandbox/alexa.keon")
+	if !ok {
+		t.Log("load failure")
+		t.FailNow()
+	}
+
+	t.Log(kv.Cap(), kv.Len())
+
+	lookup := kv.Lookup()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if !lookup(scanner.Bytes()) {
+			t.Log("fail -", scanner.Text())
+			t.FailNow()
+		}
+	}
+
+}

@@ -42,9 +42,9 @@ type KEVA struct {
 	path              string   // path to file
 	count, max        uint64   // count of items, and max items
 	depth, width      uint64   // depth and width to establish hash bucket locations [ key|key|key ]
-	hloc              uint64   // [4]uint64 indexer hash key location
 	density, shuffler uint64   // options
 	tracker           int      // options
+	hloc              uint64   // idx hash key location in [4]uint64; 3
 	key               []uint64 // key slice
 	value             []uint64 // value slice
 }
@@ -68,20 +68,21 @@ func NewKEVA(n uint64, opt *Option) *KEVA {
 	opt.configure()
 
 	var kn = &KEVA{
+		max:      n,            // max items
 		width:    opt.Width,    // [ key|key|key ]
-		hloc:     3,            // static; .calculate(&idx) [4]uint64 hash key index location
 		density:  opt.Density,  // density pading factor
 		shuffler: opt.Shuffler, // shuffler large cycle
 		tracker:  opt.Tracker,  // shuffler cycling tracker
+		hloc:     3,            // idx hash location in [4]uint64 for kn.calulate
 	}
 
-	return kn.sizer(n)
+	return kn.sizer()
 }
 
 // Load a *KEVA from disk and the checksum validation status.
 func LoadKEVA(path string) (*KEVA, bool) {
 
-	kn := &KEVA{path: path}
+	kn := &KEVA{path: path, hloc: 3}
 	kn.ext()
 
 	f, err := os.Open(kn.path)
@@ -98,7 +99,7 @@ func LoadKEVA(path string) (*KEVA, bool) {
 
 	var kv [16]byte // uint64x2 k:8 v:8
 	var i uint64
-	kn.sizer(0) // kn.max configured via header load
+	kn.sizer()
 	for {
 		_, err = io.ReadFull(buf, kv[:])
 		if err != nil {
@@ -171,14 +172,10 @@ func (kn *KEVA) Save() error {
 */
 
 // sizer configures KEVA.key slice based on size requirement and density
-func (kn *KEVA) sizer(n uint64) *KEVA {
+func (kn *KEVA) sizer() *KEVA {
 
-	if n != 0 {
-		kn.max = n
-	}
-
-	kn.depth = kn.max / kn.width              // calculate depth
-	if kn.depth*kn.width < kn.max || n == 0 { // ensure space requirements
+	kn.depth = kn.max / kn.width                   // calculate depth
+	if kn.depth*kn.width < kn.max || kn.max == 0 { // ensure space requirements
 		kn.depth++
 	}
 	kn.depth += (kn.depth * kn.density) / 1000 // add density factor padding space
