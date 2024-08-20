@@ -10,6 +10,10 @@ import (
 	"github.com/zxdev/kvs"
 )
 
+// kvs-tool
+//	inspect kvs resources
+//	provide kvs lookup service
+
 func main() {
 
 	switch len(os.Args) {
@@ -43,7 +47,6 @@ func main() {
 				for _, v := range strings.Split(os.Args[2], ",") {
 					fmt.Println("lookup:", v, lookup([]byte(v)))
 				}
-				lookup([]byte(os.Args[2]))
 			}
 
 		case strings.HasSuffix(os.Args[1], ".keva"):
@@ -56,7 +59,6 @@ func main() {
 					binary.LittleEndian.PutUint64(b, item.Value)
 					fmt.Printf("lookup: %s %v %d", v, item.Ok, b)
 				}
-				lookup([]byte(os.Args[2]))
 			}
 		}
 
