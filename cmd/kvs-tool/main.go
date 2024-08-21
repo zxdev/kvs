@@ -57,7 +57,7 @@ func main() {
 					item := lookup([]byte(v))
 					var b []byte
 					binary.LittleEndian.PutUint64(b, item.Value)
-					fmt.Printf("lookup: %s %v %d", v, item.Ok, b)
+					fmt.Printf("lookup: %s %v %v", v, item.Ok, b)
 				}
 			}
 		}
