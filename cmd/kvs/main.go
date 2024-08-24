@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +24,8 @@ func main() {
 		return
 
 	case 2:
+
+		detect(&os.Args[1])
 		info := kvs.Info(os.Args[1])
 		if !info.Ok {
 			fmt.Println("kvs: invalid resource")
@@ -39,8 +43,9 @@ func main() {
 
 	case 3:
 
+		kind := detect(&os.Args[1])
 		switch {
-		case strings.HasSuffix(os.Args[1], ".keon"):
+		case kind.Keon:
 			kv, ok := kvs.LoadKEON(os.Args[1])
 			if ok {
 				lookup := kv.Lookup()
@@ -49,7 +54,7 @@ func main() {
 				}
 			}
 
-		case strings.HasSuffix(os.Args[1], ".keva"):
+		case kind.Keva:
 			kv, ok := kvs.LoadKEVA(os.Args[1])
 			if ok {
 				lookup := kv.Lookup()
@@ -63,4 +68,28 @@ func main() {
 		}
 
 	}
+}
+
+// detect kvs type; assurance
+func detect(fn *string) (kind struct {
+	Keon, Keva bool
+}) {
+
+	switch {
+	case strings.HasSuffix(*fn, ".keon"):
+		kind.Keon = !kind.Keon
+	case strings.HasSuffix(*fn, ".keva"):
+		kind.Keva = !kind.Keva
+	default:
+		_, err := os.Stat(*fn + ".keon")
+		if kind.Keon = !errors.Is(err, fs.ErrNotExist); kind.Keon {
+			*fn += ".keon"
+			return
+		}
+		_, err = os.Stat(*fn + ".keva")
+		if kind.Keva = !errors.Is(err, fs.ErrNotExist); kind.Keva {
+			*fn += ".keva"
+		}
+	}
+	return
 }
