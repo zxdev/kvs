@@ -60,9 +60,13 @@ func main() {
 				lookup := kv.Lookup()
 				for _, v := range strings.Split(os.Args[2], ",") {
 					item := lookup([]byte(v))
-					var b []byte
-					binary.LittleEndian.PutUint64(b, item.Value)
-					fmt.Printf("lookup: %s %v %v", v, item.Ok, b)
+					var b [8]byte
+					binary.LittleEndian.PutUint64(b[:], item.Value)
+					if item.Value == 0 {
+						fmt.Printf("lookup: %s %v\n", v, item.Ok)
+						continue
+					}
+					fmt.Printf("lookup: %s %v %v\n", v, item.Ok, b)
 				}
 			}
 		}
