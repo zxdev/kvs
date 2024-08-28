@@ -95,7 +95,7 @@ func LoadKEVA(path string) (*KEVA, bool) {
 	var checksum uint64
 	buf := bufio.NewReader(f)
 	fmt.Fscanln(buf, &checksum, &kn.count, &kn.max,
-		&kn.depth, &kn.density, &kn.shuffler, &kn.tracker)
+		&kn.depth, &kn.width, &kn.density, &kn.shuffler, &kn.tracker)
 
 	var kv [16]byte // uint64x2 k:8 v:8
 	var i uint64
