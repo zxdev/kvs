@@ -2,9 +2,7 @@ package main
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +11,9 @@ import (
 )
 
 // kvs-tool
+//
 //	inspect kvs resources
 //	provide kvs lookup service
-
 func main() {
 
 	switch len(os.Args) {
@@ -25,16 +23,30 @@ func main() {
 
 	case 2:
 
-		detect(&os.Args[1])
 		info := kvs.Info(os.Args[1])
 		if !info.Ok {
-			fmt.Println("kvs: invalid resource")
-			return
+			info = kvs.Info(os.Args[1] + ".keon")
+			if !info.Ok {
+				info = kvs.Info(os.Args[1] + ".keva")
+				if !info.Ok {
+					fmt.Println("kvs: invalid resource")
+					return
+				}
+			}
+		}
+
+		var kind string
+		switch info.Signature {
+		case 0xff01:
+			kind = "keon"
+		case 0xff02:
+			kind = "keva"
 		}
 
 		fmt.Println("\n ", filepath.Base(os.Args[1]))
 		fmt.Println("---------------------------------")
 		fmt.Println("checksum   :", info.Checksum)
+		fmt.Println("timestamp  :", kind, info.Timestamp)
 		fmt.Println("capacity   :", info.Max)
 		fmt.Println("count      :", info.Count)
 		fmt.Printf("format     : %d x %x\n", info.Depth, info.Width)
@@ -43,9 +55,13 @@ func main() {
 
 	case 3:
 
-		kind := detect(&os.Args[1])
-		switch {
-		case kind.Keon:
+		info := kvs.Info(os.Args[1])
+		if !info.Ok {
+			fmt.Println("kvs: invalid resource")
+			return
+		}
+		switch info.Signature {
+		case 0xff01: // keon
 			kv, ok := kvs.LoadKEON(os.Args[1])
 			if ok {
 				lookup := kv.Lookup()
@@ -54,7 +70,7 @@ func main() {
 				}
 			}
 
-		case kind.Keva:
+		case 0xff02: // keva
 			kv, ok := kvs.LoadKEVA(os.Args[1])
 			if ok {
 				lookup := kv.Lookup()
@@ -74,26 +90,26 @@ func main() {
 	}
 }
 
-// detect kvs type; assurance
-func detect(fn *string) (kind struct {
-	Keon, Keva bool
-}) {
+// // detect kvs type; assurance
+// func detect(fn *string) (kind struct {
+// 	Keon, Keva bool
+// }) {
 
-	switch {
-	case strings.HasSuffix(*fn, ".keon"):
-		kind.Keon = !kind.Keon
-	case strings.HasSuffix(*fn, ".keva"):
-		kind.Keva = !kind.Keva
-	default:
-		_, err := os.Stat(*fn + ".keon")
-		if kind.Keon = !errors.Is(err, fs.ErrNotExist); kind.Keon {
-			*fn += ".keon"
-			return
-		}
-		_, err = os.Stat(*fn + ".keva")
-		if kind.Keva = !errors.Is(err, fs.ErrNotExist); kind.Keva {
-			*fn += ".keva"
-		}
-	}
-	return
-}
+// 	switch {
+// 	case strings.HasSuffix(*fn, ".keon"):
+// 		kind.Keon = !kind.Keon
+// 	case strings.HasSuffix(*fn, ".keva"):
+// 		kind.Keva = !kind.Keva
+// 	default:
+// 		_, err := os.Stat(*fn + ".keon")
+// 		if kind.Keon = !errors.Is(err, fs.ErrNotExist); kind.Keon {
+// 			*fn += ".keon"
+// 			return
+// 		}
+// 		_, err = os.Stat(*fn + ".keva")
+// 		if kind.Keva = !errors.Is(err, fs.ErrNotExist); kind.Keva {
+// 			*fn += ".keva"
+// 		}
+// 	}
+// 	return
+// }

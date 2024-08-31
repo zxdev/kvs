@@ -53,7 +53,7 @@ func main() {
 				}
 			}
 
-			kv.Write(os.Args[1])
+			kv.Write(os.Args[1] + ".keon")
 		}
 
 	}

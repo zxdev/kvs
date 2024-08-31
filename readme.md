@@ -14,6 +14,21 @@ This is a key:value hash table that links the key:value unit. It is akin to a ma
 
 The defaut configuration utilizes a cuckoo style hash table that has been optimized with and and internal shuffler that optimizes the table density while providing constant lookup performace expectations.
 
+
+```shell
+$ kvs testdata/test
+
+  alexa-948061.keon
+---------------------------------
+checksum   : 1288379988661879870
+timestamp  : keon 1725119832
+capacity   : 948061
+count      : 948061
+format     : 317601 x 3
+density    : 5 952803 [4742]
+shuffler   : 500 x 50
+
+```
 ---
 
 # Options

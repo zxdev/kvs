@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"time"
 
 	"github.com/zxdev/xxhash"
 )
@@ -77,11 +77,10 @@ func NewKEON(n uint64, opt *Option) *KEON {
 	return kn.sizer()
 }
 
-// LoadKEON a *KEON from disk and the checksum validation status.
+// LoadKEON a *KEON from disk and validate the checksum and signature.
 func LoadKEON(path string) (*KEON, bool) {
 
 	kn := &KEON{path: path, hloc: 3}
-	kn.ext()
 
 	f, err := os.Open(kn.path)
 	if err != nil {
@@ -90,9 +89,9 @@ func LoadKEON(path string) (*KEON, bool) {
 	defer f.Close()
 
 	kn.path = path
-	var checksum uint64
+	var signature, checksum, timestamp uint64
 	buf := bufio.NewReader(f)
-	fmt.Fscanln(buf, &checksum, &kn.count, &kn.max,
+	fmt.Fscanln(buf, &signature, &checksum, &timestamp, &kn.count, &kn.max,
 		&kn.depth, &kn.width, &kn.density, &kn.shuffler, &kn.tracker)
 
 	var k [8]byte
@@ -102,7 +101,7 @@ func LoadKEON(path string) (*KEON, bool) {
 		_, err = io.ReadFull(buf, k[:])
 		if err != nil {
 			// io.EOF or io.UnexpectedEOF
-			return kn, checksum == kn.validation()
+			return kn, checksum == kn.validation() && signature == 0xff01
 		}
 		kn.key[i] = binary.LittleEndian.Uint64(k[:])
 		i++
@@ -117,27 +116,18 @@ func LoadKEON(path string) (*KEON, bool) {
 
 */
 
-// ext validates the file has a .keon extension
-func (kn *KEON) ext() {
-	if len(kn.path) == 0 {
-		kn.path = "kvs.keon"
-	}
-	if !strings.HasSuffix(kn.path, ".keon") {
-		kn.path += ".keon"
-	}
-}
-
 // Write *KEON to disk at path.
 func (kn *KEON) Write(path string) error {
 	kn.path = path
-	kn.ext()
 	return kn.Save()
 }
 
 // Save *KEON to disk at prior Load/Write path
 func (kn *KEON) Save() error {
 
-	kn.ext()
+	if len(kn.path) == 0 {
+		kn.path = "kvs.keon"
+	}
 
 	f, err := os.Create(kn.path)
 	if err != nil {
@@ -145,8 +135,9 @@ func (kn *KEON) Save() error {
 	}
 	defer f.Close()
 
+	// 0xff01 is the keon signature type
 	buf := bufio.NewWriter(f)
-	fmt.Fprintln(buf, kn.validation(), kn.count, kn.max,
+	fmt.Fprintln(buf, 0xff01, kn.validation(), time.Now().Unix(), kn.count, kn.max,
 		kn.depth, kn.width, kn.density, kn.shuffler, kn.tracker)
 
 	var b [8]byte

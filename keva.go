@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"time"
 
 	"github.com/zxdev/xxhash"
 )
@@ -79,11 +79,10 @@ func NewKEVA(n uint64, opt *Option) *KEVA {
 	return kn.sizer()
 }
 
-// Load a *KEVA from disk and the checksum validation status.
+// Load a *KEVA from disk and validate the checksum and signature.
 func LoadKEVA(path string) (*KEVA, bool) {
 
 	kn := &KEVA{path: path, hloc: 3}
-	kn.ext()
 
 	f, err := os.Open(kn.path)
 	if err != nil {
@@ -92,9 +91,9 @@ func LoadKEVA(path string) (*KEVA, bool) {
 	defer f.Close()
 
 	kn.path = path
-	var checksum uint64
+	var signature, checksum, timestamp uint64
 	buf := bufio.NewReader(f)
-	fmt.Fscanln(buf, &checksum, &kn.count, &kn.max,
+	fmt.Fscanln(buf, &signature, &checksum, &timestamp, &kn.count, &kn.max,
 		&kn.depth, &kn.width, &kn.density, &kn.shuffler, &kn.tracker)
 
 	var kv [16]byte // uint64x2 k:8 v:8
@@ -104,7 +103,7 @@ func LoadKEVA(path string) (*KEVA, bool) {
 		_, err = io.ReadFull(buf, kv[:])
 		if err != nil {
 			// io.EOF or io.UnexpectedEOF
-			return kn, checksum == kn.validation()
+			return kn, checksum == kn.validation() && signature == 0xff02
 		}
 		kn.key[i] = binary.LittleEndian.Uint64(kv[:8])
 		kn.value[i] = binary.LittleEndian.Uint64(kv[8:])
@@ -116,31 +115,22 @@ func LoadKEVA(path string) (*KEVA, bool) {
 /*
 	KEVA file i/o methods
 		KEVA.Load
-		kn.Create, kn.Save
+		kn.Write, kn.Save
 
 */
-
-// ext validates the file has a .KEVA extension
-func (kn *KEVA) ext() {
-	if len(kn.path) == 0 {
-		kn.path = "kvs.keva"
-	}
-	if !strings.HasSuffix(kn.path, ".keva") {
-		kn.path += ".keva"
-	}
-}
 
 // Write *KEVA to disk at path.
 func (kn *KEVA) Write(path string) error {
 	kn.path = path
-	kn.ext()
 	return kn.Save()
 }
 
 // Save *KEVA to disk at prior Load/Write path
 func (kn *KEVA) Save() error {
 
-	kn.ext()
+	if len(kn.path) == 0 {
+		kn.path = "kvs.keva"
+	}
 
 	f, err := os.Create(kn.path)
 	if err != nil {
@@ -148,8 +138,9 @@ func (kn *KEVA) Save() error {
 	}
 	defer f.Close()
 
+	// 0xff02 is the keva signaure type
 	buf := bufio.NewWriter(f)
-	fmt.Fprintln(buf, kn.validation(), kn.count, kn.max,
+	fmt.Fprintln(buf, 0xff02, kn.validation(), time.Now().Unix(), kn.count, kn.max,
 		kn.depth, kn.width, kn.density, kn.shuffler, kn.tracker)
 
 	var b [8]byte
