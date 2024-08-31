@@ -12,7 +12,7 @@ This is a key:value hash table that links the key:value unit. It is akin to a ma
 * To be MRSW would require an external wrapper to implement sync.RWMutex to safeguard existing data integrity operations and prevent data races due to the dynamic nature of the design and internal movement of items.
 * Once created, the table is a static sized container space, meaning the max capacity once specified can not be altered without creating a new a new container.
 
-The defaut configuration utilizes a cuckoo style hash table that has been optimized with and and internal shuffler that optimizes the table density while providing constant lookup performace expectations.
+The defaut configuration utilizes a cuckoo style hash table that has been optimized with an internal shuffler that optimizes the table density while providing constant lookup performace expectations and assurances.
 
 
 ```shell
@@ -33,12 +33,12 @@ shuffler   : 500 x 50
 
 # Options
 
-Modifying the ```shuffler``` (default 500) manages the internal item shuffle internally with cyclic track detection, so a higher track movement trials helps gain higher density at longer insert times when nearing capacity. Modifying the ```tracker``` (default 50) manages the cyclic movement detection size within an individual track trial with the current bucket width (default 3) for recurrent item movement back to to a prior location, when cyclinc movement is detected the shuffler quickly aborts to a new trial track. This cyclic tracker has proven to be worth about ~2x performance gain and setting around 17 x (the bucket size) seems to be ideal
+Modifying the ```shuffler``` (default 500) adjusts the internal item shuffle internally while outside the internal cyclic track detection shuffler, so a higher value helps gain higher density at longer insert times when nearing capacity. Modifying the ```tracker``` (default 50) monitors movements for cyclic recurrences for specified shuffles as an individual shuffler track with the current bucket width (default 3) for recurrent item movement back to to a prior index location, and when cyclic movement is detected the shuffler aborts to a new trial track with a new randomly selected items. This cyclic tracker has proven to be worth about ~2x performance gain and setting around 17 x (the bucket size) seems to be ideal.
 
 * Shuffler ```(default 500)```
 * Tracker ```(default 50)```
 
-Shuffler and Tracker configure the .Insert() methods movement shuffler that makes space for the new itme by rotating current items into their alternate hash index location. 
+Shuffler and Tracker configure the .Insert() methods movement shuffler that makes space for the new items by rotating current items into their alternate hash index location. 
 
 * Density ```(default 25)``` 2.5% padding
 
@@ -67,7 +67,7 @@ This specifies the number of buckets per index arraged logically like in a row/b
 
 ## density and shuffler considerations
 
-The size requriment and performance tuning needs to consider the voulme of data, table density, and format. To determine optimal settings, tuning tests will need to be performed.
+The size requirement and performance tuning needs to consider the voulme of data, table density, and format. To determine optimal settings, tuning tests will need to be performed.
 
 Insert 10MM entires with padding factor of 2.5% (97.5% density). Memory requirement 78.201mb.
 
@@ -142,8 +142,8 @@ kvs % go test -v -run KEON
 * 23MM lookup/sec.
 * 1e6 items in 7.63mb ram.
 
-## Keon MPH (or very close)
-kvs.NewKEON(size, &kvs.Option{Density: 100})
+## Keon MPH (very close)
+kvs.NewKEON(size, &kvs.Option{Density: 2})
 
 ```shell
 go test -v -run Option
@@ -156,7 +156,7 @@ go test -v -run Option
 
 * 1.7MM insert/sec @99.98% density and width:5
 * 23MM lookup/sec.
-* 1e6 items in 7.63mb ram; perfect hash.
+* 1e6 items in 7.63mb ram; 99.98% perfect hash.
 
 
 ## Keva
