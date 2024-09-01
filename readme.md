@@ -18,7 +18,7 @@ The defaut configuration utilizes a cuckoo style hash table that has been optimi
 ```shell
 $ kvs testdata/test
 
-  alexa-948061.keon
+  test
 ---------------------------------
 checksum   : 1288379988661879870
 timestamp  : keon 1725119832
@@ -27,6 +27,7 @@ count      : 948061
 format     : 317601 x 3
 density    : 5 952803 [4742]
 shuffler   : 500 x 50
+memory     : 7.27 MiB
 
 ```
 ---
