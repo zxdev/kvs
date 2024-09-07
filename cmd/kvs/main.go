@@ -36,12 +36,16 @@ func main() {
 			}
 		}
 
-		var kind string
+		const unit = 1024 // IEC units
+		var size uint64   // bytes per type
+		var kind string   // kvs type
 		switch info.Signature {
 		case 0xff01:
 			kind = "keon"
+			size += 8
 		case 0xff02:
 			kind = "keva"
+			size += 16
 		}
 
 		fmt.Println("\n ", filepath.Base(os.Args[1]))
@@ -52,7 +56,19 @@ func main() {
 		fmt.Println("count      :", info.Count)
 		fmt.Printf("format     : %d x %x\n", info.Depth, info.Width)
 		fmt.Printf("density    : %d %d [%d]\n", info.Density, info.Depth*info.Width, (info.Depth*info.Width)-info.Count)
-		fmt.Printf("shuffler   : %d x %d\n\n", info.Shuffler, info.Tracker)
+		fmt.Printf("shuffler   : %d x %d\n", info.Shuffler, info.Tracker)
+
+		var b = info.Depth * info.Width * size
+		if b > unit {
+			div, exp := int64(unit), 0
+			for n := b / unit; n >= unit; n /= unit {
+				div *= unit
+				exp++
+			}
+			fmt.Printf("memory     : %.2f %ciB\n", float64(b)/float64(div), "KMGTPE"[exp])
+		}
+
+		fmt.Println()
 
 	case 3:
 
