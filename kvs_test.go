@@ -12,9 +12,9 @@ import (
 
 func TestKEON(t *testing.T) {
 
-	size := uint64(1000000)
-
-	kn := kvs.NewKEON(size, nil)
+	size := uint64(10000000)
+	var opt = &kvs.Option{Density: 25, Width: 3, Shuffler: 1000} // 97.50% starting density factor
+	kn := kvs.NewKEON(size, opt)
 	insert := kn.Insert(false)
 	lookup := kn.Lookup()
 
@@ -42,7 +42,7 @@ func TestKEON(t *testing.T) {
 
 func TestKEVA(t *testing.T) {
 
-	size := uint64(1000000)
+	size := uint64(10000000)
 
 	kn := kvs.NewKEVA(size, nil)
 	insert := kn.Insert(false) // no update
@@ -57,16 +57,97 @@ func TestKEVA(t *testing.T) {
 	}
 	t.Log("insert", time.Since(t0))
 
-	t0 = time.Now()
 	for i := uint64(0); i < size; i++ {
 		if item := lookup([]byte{byte(i % 255), byte(i % 127), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}); !item.Ok || item.Value != i {
 			t.Log("lookup failure", i, item)
 			t.FailNow()
 		}
 	}
-	t.Log("lookup", time.Since(t0))
 
 	t.Log("stats", kn.Len(), kn.Cap(), kn.Ratio())
+
+}
+
+func TestBestFit(t *testing.T) {
+
+	// === RUN   TestBestFit Find Solution 99.97% compression
+	// 	kvs_test.go:87:  kvs: best for 1000000
+	// 	kvs_test.go:106: kvs: generation [1,500,3] failure
+	// 	kvs_test.go:106: kvs: generation [2,500,3] failure
+	// 	kvs_test.go:116: kvs: build [3,1500,3] 371327/sec
+	// 	kvs_test.go:126: kvs: lookup [3,1500,3] 23048910/sec
+	// --- PASS: TestBestFit (6.73s)
+	// PASS
+
+	// 	=== RUN   TestBestFit Averrage Build 99.90% compression
+	//   kvs_test.go:87:  kvs: best for 1000000
+	//   kvs_test.go:116: kvs: build [10,500,3] 1517464/sec
+	//   kvs_test.go:126: kvs: lookup [10,500,3] 23476796/sec
+	// --- PASS: TestBestFit (0.70s)
+	// PASS
+
+	// 	=== RUN   TestBestFit Fast Build 97.50% compression
+	//  kvs_test.go:94:  kvs: best for 1000000
+	//  kvs_test.go:123: kvs: build [25,500,3] 2615753/sec
+	//  kvs_test.go:133: kvs: lookup [25,500,3] 23209732/sec
+	// --- PASS: TestBestFit (0.43s)
+	// PASS
+
+	// 	=== RUN   TestBestFit 99.99% compression
+	//     kvs_test.go:100: kvs: best for 1000000
+	//     kvs_test.go:129: kvs: build [1,1500,4] 516023/sec
+	//     kvs_test.go:139: kvs: lookup [1,1500,4] 23236315/sec
+	// --- PASS: TestBestFit (1.98s)
+	// PASS
+
+	var size = uint64(1000000)
+	var opt = &kvs.Option{Density: 1, Width: 4, Shuffler: 1500} // 99.98% starting density factor
+	var t0 time.Time
+	var t1 time.Duration
+	t.Log("kvs: best for", size)
+
+	for fail := true; fail; {
+		kn := kvs.NewKEON(size, opt)
+		insert := kn.Insert(false) // no update
+		lookup := kn.Lookup()
+		t0 = time.Now()
+		for i := uint64(0); i < size; i++ {
+			if fail = insert([]byte{byte(i % 255), byte(i % 127), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 127), byte(i % 99)}).NoSpace; fail {
+				break
+			}
+		}
+		t1 = time.Since(t0)
+
+		switch {
+		case opt.Density > 25:
+			t.Log("kvs: generation failure")
+			return
+		case fail:
+			t.Logf("kvs: generation [%d,%d,%d] failure", opt.Density, opt.Shuffler, opt.Width)
+			opt.Density += 1        // increase density padding factor
+			if opt.Density%3 == 0 { // bump shuffler every 0.03% increase
+				opt.Shuffler += 1000
+			}
+			if opt.Density > 10 && opt.Width < 5 {
+				opt.Width++ // bump width
+			}
+			continue
+		default:
+			t.Logf("kvs: build [%d,%d,%d] %.0f/sec", opt.Density, opt.Shuffler, opt.Width, float64(kn.Len())/t1.Seconds())
+
+			t0 = time.Now()
+			for i := uint64(0); i < size; i++ {
+				if !lookup([]byte{byte(i % 255), byte(i % 127), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 127), byte(i % 99)}) {
+					t.Log("lookup failure")
+					t.FailNow()
+				}
+			}
+			t1 = time.Since(t0)
+			t.Logf("kvs: lookup [%d,%d,%d] %.0f/sec", opt.Density, opt.Shuffler, opt.Width, float64(kn.Len())/t1.Seconds())
+
+			return
+		}
+	}
 
 }
 
