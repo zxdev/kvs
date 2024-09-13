@@ -25,12 +25,19 @@ GOOS=linux GOARCH=amd64 go build \
 -ldflags "-s -w" \
 -o $INSTALL/kvs-keon $SOURCE/kvs-keon/$MAIN
 
+echo "BUILD kvs-keva"
+GOOS=linux GOARCH=amd64 go build \
+-trimpath \
+-ldflags "-s -w" \
+-o $INSTALL/kvs-keva $SOURCE/kvs-keva/$MAIN
+
 # automated remote server installation
 if [ "$SERVER" ]; then 
     
     echo "TRANSMIT to $SERVER"
     scp $INSTALL/kvs $SERVER:
     scp $INSTALL/kvs-keon $SERVER:
+    scp $INSTALL/kvs-keva $SERVER:
     SSH $SERVER "sudo mv kvs* $BIN"
     echo "INSTALLED"
     

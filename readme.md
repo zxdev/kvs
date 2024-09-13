@@ -68,117 +68,94 @@ This specifies the number of buckets per index arraged logically like in a row/b
 
 ## density and shuffler considerations
 
-The size requirement and performance tuning needs to consider the voulme of data, table density, and format. To determine optimal settings, tuning tests will need to be performed.
+The size requirement and performance tuning needs to consider the volume of data, table density, and format. To determine optimal settings, tuning tests will need to be performed, ```TestBestFit``` provides a basic tuning formula approach for a best compression build.
 
-Insert 10MM entires with padding factor of 2.5% (97.5% density). Memory requirement 78.201mb.
+# Examples
+
+With 10 million record trils, as shown below, the following code performance was observed on an Apple 2023 M2 Pro Mac Mini with 16GB ram.
+
+* insert 97.50% ~ 1.7MM/sec degrading to ~200k/sec at 99.97% table fill density.
+* lookup 97.50% ~ 7.32MM/sec degrading to 5.85MM/sec based on table column architecure.
+
+## samples
+
+Insert 10MM entires with padding factor of 2.5% (97.5% density).
 
 ```shell
-=== RUN   TestOption
-    kvs_test.go:89: insert 5.312242291s @density=25
-    kvs_test.go:98: lookup 1.065102708s
-    kvs_test.go:100: stats 10000000 10000000 100
---- PASS: TestOption (6.38s)
+=== RUN   TestKEON
+    kvs_test.go:38: insert 5.9s 1.69e+06
+    kvs_test.go:48: lookup 1.3s 7.32e+06
+    kvs_test.go:50: opt   &{25 3 500 50}
+    kvs_test.go:51: stats 10000000 10000000 18446423210106567862
+--- PASS: TestKEON (7.29s)
 ```
 
-Insert 10MM entries with padding facor of 0.04% (99.96% density) Memory requirement 76.324mb. bytes.
+Insert 10MM entries with padding facor of 0.04% (99.96% density).
 ```shell
-2024/08/16 18:54:34 3346667 10040001 4 10000000
-    kvs_test.go:89: insert 20.696769125s @density=4
-    kvs_test.go:98: lookup 1.066863625s
-    kvs_test.go:100: stats 10000000 10000000 100
---- PASS: TestOption (21.76s)
+=== RUN   TestKEON
+    kvs_test.go:38: insert 22.s 4.42e+05
+    kvs_test.go:48: lookup 1.4s 7.02e+06
+    kvs_test.go:50: opt   &{4 3 500 50}
+    kvs_test.go:51: stats 10000000 10000000 18446423210106567862
+--- PASS: TestKEON (24.07s)
 ```
 
-Insert 10MM entries with padding facotr of 0.03% (99.97% density) with default shuffler of 500 this fails, however when increasing the Shuffer to 5000 the table is successfully created at 2x the time requirement for 1000 fewer padding bucket (8k) gain.
+Insert 10MM entries with padding facotr of 0.03% (99.97% density) with default shuffler of 500 this fails, however when increasing the Shuffer to 5000 the table is successfully created at 2x the time requirement (22s vs 48s) but requiring fewer pad buckets for an overall memory savings vs the previous 99.96% density.
 ```shell
-=== RUN   TestOption
-    kvs_test.go:89: insert 43.8051215s @density=3
-    kvs_test.go:98: lookup 1.151619667s
-    kvs_test.go:100: stats 10000000 10000000 100
---- PASS: TestOption (44.96s)
+=== RUN   TestKEON
+    kvs_test.go:38: insert 48.s 2.05e+05
+    kvs_test.go:48: lookup 1.3s 7.15e+06
+    kvs_test.go:50: opt   &{3 3 5000 51}
+    kvs_test.go:51: stats 10000000 10000000 18446423210106567862
 ```
 
-Insert 10MM entries with padding factor of 0.03% (99.97% density) with default Shuffler:500 and Width:5 is successful and 4x faster with slight impact on lookup time due to table with. In effect, instead of 3x3=9 possible locations, the possible locatations shift from 3x5=15 (a gain of 40% more possible options).
+Insert 10MM entries with padding factor of 0.03% (99.97% density) and width:4 is successful and almost 5x faster with an impact on lookup performance due to table width. In effect, instead of 3x3=9 possible locations, the possible locatations shift from 3x4=12 providing 25% additional internal addressing, 3x5=15 provides an additional 40% internal addressing at the expense of lookup performance.
 ```shell
-=== RUN   TestOption
-    kvs_test.go:89: insert 7.168545125s @density=3
-    kvs_test.go:98: lookup 1.250907083s
-    kvs_test.go:100: stats 10000000 10000000 100
---- PASS: TestOption (8.42s)
+=== RUN   TestKEON
+    kvs_test.go:38: insert 11.s 8.88e+05
+    kvs_test.go:48: lookup 1.5s 6.46e+06
+    kvs_test.go:50: opt   &{3 4 500 50}
+    kvs_test.go:51: stats 10000000 10000000 18446423210106567862
+--- PASS: TestKEON (12.81s)
+
+=== RUN   TestKEON
+    kvs_test.go:38: insert 8.7s 1.14e+06
+    kvs_test.go:48: lookup 1.7s 5.85e+06
+    kvs_test.go:50: opt   &{3 5 500 50}
+    kvs_test.go:51: stats 10000000 10000000 18446423210106567862
+--- PASS: TestKEON (10.49s)
 ```
 
-As the density increases the creation/insert time increases as the system moves toward a perfect hash table solution for the table data. The is a balance between space utiliztion, width, vs time of insertion, all these parameters can be tuned for the use case, as shown above.
+As the density increases the creation/insert time increases as the system moves toward or approaches a perfect hash table solution for the given table data. There is a balance between space utiliztion, width, shuffle cycles vs time of insertion, all these parameters can be tuned for the specif use case, as shown above.
+
+Notice in the above examples the checksum value of ```18446423210106567862``` is consistent across all table formats and density factors. The checksum in not order dependant, the checksum is item dependant, meaning regardless of the table format configurations, the same set of data will ALWAYS generate the same checksum regardless of where the item is physically located inside the structure. This provides an assurance that the expected items are present somewhere in the table. 
 
 ---
 
-.Insert(bool) reports three conditions
+```golang
+insert := kv.Insert(bool) 
+  ...
+result := insert(key) // result reports three conditions
+  result.Ok
+  result.Exist
+  result.NoSpace
+```
 
 * Ok, insert was successful
 * Exist, key already exists 
-  * update 
-  * collision 
+  * update flag
+  * collision flag
 * NoSpace
-  * At max capacity, when kn.Count == kn.Max
-  * Shuffer failure, when kn.Count < kn.Max
+  * At max capacity, when kn.Count() == kn.Max()
+  * Shuffer failure, when kn.Count() < kn.Max()
+
+## considerations
+
+The current design does not implement a rollback feature for ```result.NoSpace```. The shuffler is random, so a random entery, not the current key, has been ejected from the data. For this reason, the table must be rebuilt from source. This generally means the current table architecure needs to be adjusted to allow more shuffle cycles to seek for a solution and/or altering the density and the table architecture.
 
 ---
 
-# Example 
-
-With 1e6 records trial, the following code performance was observed on an Apple 2023 M2 Pro Mac Mini with 16GB ram.
-
-## Keon
-Default Options
-
-```shell
-kvs % go test -v -run KEON
-=== RUN   TestKEON
-    kvs_test.go:28: insert 360.640125ms
-    kvs_test.go:37: lookup 42.709625ms
-    kvs_test.go:39: stats 1000000 1000000 100
---- PASS: TestKEON (0.40s)
-```
-
-* 2.7MM insert/sec @97.5% density.
-* 23MM lookup/sec.
-* 1e6 items in 7.63mb ram.
-
-## Keon MPH (very close)
-kvs.NewKEON(size, &kvs.Option{Density: 2})
-
-```shell
-go test -v -run Option
-=== RUN   TestOption
-    kvs_test.go:89: insert 578.899334ms @density=2
-    kvs_test.go:98: lookup 43.508791ms
-    kvs_test.go:100: stats 1000000 1000000 100
---- PASS: TestOption (0.62s)
-```
-
-* 1.7MM insert/sec @99.98% density and width:5
-* 23MM lookup/sec.
-* 1e6 items in 7.63mb ram; 99.98% perfect hash.
-
-
-## Keva
-Default Options 
-
-```shell
-go test -v -run KEVA
-=== RUN   TestKEVA
-    kvs_test.go:58: insert 573.638458ms
-    kvs_test.go:67: lookup 50.265083ms
-    kvs_test.go:69: stats 1000000 1000000 100
---- PASS: TestKEVA (0.62s)
-```
-* 1.7MM insert/sec @97.5% density
-* 20MM lookup/sec.
-* 1e6 items in 15.26mb ram.
-
-
----
-
-Scaling factor for concurrent go routine readers has been observed to approximately 1.5x per CPU, so in theory a 4 core machine could support 6 concurrent go routines with a theoretical rate of reads of approximately 138MM/sec accessing a KEON or 114MM/sec accessing a KEVA.
+Scaling factor for concurrent go routine readers has been observed to approximately 1.5x per CPU, so in theory a 4 core machine could support 6 concurrent go routines.
 
 # MRSW
 
@@ -219,3 +196,44 @@ Adding a sync.RWMutex around the Insert, Lookup, and Remove methods for concurre
 
 
 ```
+
+# Export
+
+The internal content of the KVS object can be exported, however be aware that the export will consist of the raw internal data.
+
+When using an export to rebuild or resize a data object the ```RawInsert``` method allows the table to be rebuilt without computing the hash, which is why it is provided. 
+
+```golang
+  
+  next := kn.Export()
+	for b := [8]byte{}; next(&b); {
+		w.Write(b[:])
+	}
+
+  var kn := kvs.NewKEON(size,&opt)
+  var insert = kn.RawInsert(false)
+  var scanner = bufio.NewScanner(reader)
+  for scanner.Scan() {
+    if !insert(scanner.Bytes()).Ok {
+      return
+    }
+  }
+
+```
+
+To resize a KVS object simply export the data to a file or buffer and create a new KVS container object and use the ```RawInsert(bool)``` method as shown above. The internal structure and where items can be found is based on the KVS object format that was/is establised at the creation time of the KVS object.
+
+# Merge KVS Objects
+
+While any regular file can be used to add or remove items using the applicable ```Insert(bool)``` methods, it is possible to create smaller update files that can be configured to add, update, or remove itmes. The only requirement is that the KVS objects be of the same type and that there is space available in the primary KVS object to handle the new items. A composite checksum of new impacts will be generated, meaning new items added (not just updated) and items thaere were removed.
+
+```golang
+
+  // r = struct{Ok bool; Invalid bool; NoSpace bool; Items uint64; Checksum uint64}
+  r := kvs.MergeKEON(kn1, f2, nil)
+
+```
+
+To apply a patch in real-time with inflight queries the integrator must have coded the design for a MSRW useage (as shown above) or otherwise take the KVS service should be taken offline to prevent data races and placed into a maintence mode, apply the patch updates, then retore the system to an online status. The second approach is more easly handled when the system is part of a cluster. 
+
+If the patch update failes, the origional source fails with an ejected random key; unrecoverable. It is trivial to reload the current state, export the current contents in a raw form, enlarge and/or KVS option for the appropriate size or format using options settngs, and then populate the new data object table using the raw export and then merge the patch data and save the update. Because the checksum is order independent of the key location within the table and the table format, it is trivial to create a new table and generate a a composite checkum for validation of all keys present.

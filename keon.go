@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"crypto/rand"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"os"
 	"time"
@@ -66,45 +65,55 @@ func NewKEON(n uint64, opt *Option) *KEON {
 	opt.configure()
 
 	var kn = &KEON{
+		hloc:     3,            // idx hash location in [4]uint64 for kn.calulate
 		max:      n,            // maximum size
 		width:    opt.Width,    // [ key|key|key ]
 		density:  opt.Density,  // density pading factor
 		shuffler: opt.Shuffler, // shuffler large cycle
 		tracker:  opt.Tracker,  // shuffler cycling tracker
-		hloc:     3,            // idx hash location in [4]uint64 for kn.calulate
 	}
 
-	return kn.sizer()
+	return kn.sizer(true)
 }
 
 // LoadKEON a *KEON from disk and validate the checksum and signature.
 func LoadKEON(path string) (*KEON, bool) {
 
-	kn := &KEON{path: path, hloc: 3}
-
-	f, err := os.Open(kn.path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, false // bad file
 	}
 	defer f.Close()
 
-	kn.path = path
-	var signature, checksum, timestamp uint64
-	buf := bufio.NewReader(f)
-	fmt.Fscanln(buf, &signature, &checksum, &timestamp, &kn.count, &kn.max,
-		&kn.depth, &kn.width, &kn.density, &kn.shuffler, &kn.tracker)
-
+	var buf = bufio.NewReader(f)
+	var signature, checksum, index uint64
+	var header [80]byte
 	var k [8]byte
-	var i uint64
-	kn.sizer()
+	io.ReadFull(buf, header[:])
+	signature = binary.BigEndian.Uint64(header[:8])
+	checksum = binary.BigEndian.Uint64(header[8:16])
+	// timestamp = binary.BigEndian.Uint64(header[16:24])
+	kn := &KEON{
+		path:     path,
+		hloc:     3,
+		count:    binary.BigEndian.Uint64(header[24:32]),
+		max:      binary.BigEndian.Uint64(header[32:40]),
+		depth:    binary.BigEndian.Uint64(header[40:48]),
+		width:    binary.BigEndian.Uint64(header[48:56]),
+		density:  binary.BigEndian.Uint64(header[56:64]),
+		shuffler: binary.BigEndian.Uint64(header[64:72]),
+		tracker:  int(binary.BigEndian.Uint64(header[72:])),
+	}
+	kn.sizer(false)
+
 	for {
 		_, err = io.ReadFull(buf, k[:])
 		if err != nil {
 			// io.EOF or io.UnexpectedEOF
-			return kn, checksum == kn.validation() && signature == 0xff01
+			return kn, signature == 0xff01 && checksum == kn.Checksum()
 		}
-		kn.key[i] = binary.LittleEndian.Uint64(k[:])
-		i++
+		kn.key[index] = binary.BigEndian.Uint64(k[:])
+		index++
 	}
 
 }
@@ -135,14 +144,19 @@ func (kn *KEON) Save() error {
 	}
 	defer f.Close()
 
-	// 0xff01 is the keon signature type
-	buf := bufio.NewWriter(f)
-	fmt.Fprintln(buf, 0xff01, kn.validation(), time.Now().Unix(), kn.count, kn.max,
-		kn.depth, kn.width, kn.density, kn.shuffler, kn.tracker)
-
+	// 0xff01 is the keon header signature type
+	var buf = bufio.NewWriter(f)
 	var b [8]byte
+	for _, v := range []uint64{
+		0xff01, kn.Checksum(), uint64(time.Now().Unix()),
+		kn.count, kn.max, kn.depth, kn.width, kn.density, kn.shuffler, uint64(kn.tracker),
+	} {
+		binary.BigEndian.PutUint64(b[:], v)
+		buf.Write(b[:])
+	}
+
 	for i := uint64(0); i < uint64(len(kn.key)); i++ {
-		binary.LittleEndian.PutUint64(b[:], kn.key[i])
+		binary.BigEndian.PutUint64(b[:], kn.key[i])
 		buf.Write(b[:])
 	}
 
@@ -150,30 +164,52 @@ func (kn *KEON) Save() error {
 	return f.Sync()
 }
 
+// Export all bucket hash data excluding empty buckets
+func (kn *KEON) Export() func(b *[8]byte) bool {
+	var item int
+	var checksum uint64
+	return func(b *[8]byte) bool {
+		for item < len(kn.key) {
+			if kn.key[item] == 0 {
+				item++
+				continue
+			}
+			binary.BigEndian.PutUint64(b[:], kn.key[item])
+			checksum ^= kn.key[item]
+			item++
+			return true
+		}
+		return false
+	}
+}
+
 /*
 	KEON utility and information methods
-		sizer, validation
+		sizer, Checksum
 		Len, Cap, Ratio, Ident
 
 */
 
 // sizer configures KEON.key slice based on size requirement and density factor
-func (kn *KEON) sizer() *KEON {
+func (kn *KEON) sizer(calculate bool) *KEON {
 
-	kn.depth = kn.max / kn.width                   // calculate depth
-	if kn.depth*kn.width < kn.max || kn.max == 0 { // ensure space requirements
-		kn.depth++
+	if calculate {
+		kn.depth = kn.max / kn.width                   // calculate depth
+		if kn.depth*kn.width < kn.max || kn.max == 0 { // ensure space requirements
+			kn.depth++
+		}
+		kn.depth += (kn.depth * kn.density) / 1000 // add density factor padding space
 	}
-	kn.depth += (kn.depth * kn.density) / 1000 // add density factor padding space
 	kn.key = make([]uint64, kn.depth*kn.width)
 
 	return kn
 }
 
-// validation generates a checksum number for data integrity validation
-func (kn *KEON) validation() (checksum uint64) {
+// Checksum generates an order independant numeric
+// using the KEON key; empty buckets have no impact
+func (kn *KEON) Checksum() (checksum uint64) {
 	for i := range kn.key {
-		checksum = kn.key[i] ^ checksum // XOR
+		checksum ^= kn.key[i] // XOR
 	}
 	return checksum
 }
@@ -231,71 +267,99 @@ func (kn *KEON) Lookup() func(key []byte) bool {
 }
 
 // Remove key from *KEON.
-func (kn *KEON) Remove() func(key []byte) bool {
+//
+//	Ok    key is valid
+//	Exist found in table
+func (kn *KEON) Remove() func([]byte) struct{ Ok, Exist bool } { return kn.remove(xxhash.Sum) }
+func (kn *KEON) RawRemove() func([]byte) struct{ Ok, Exist bool } {
+	return kn.remove(func(raw []byte) uint64 { return binary.BigEndian.Uint64(raw) })
+}
 
-	var idx [4]uint64 // index locations
-	var n, i, j uint64
+func (kn *KEON) remove(encoder func([]byte) uint64) func(key []byte) struct{ Ok, Exist bool } {
 
-	return func(key []byte) bool {
+	var idx [4]uint64  // index locations + key
+	var n, i, j uint64 // counters
 
-		idx[kn.hloc] = xxhash.Sum((key))
+	return func(key []byte) (item struct{ Ok, Exist bool }) {
+
+		idx[kn.hloc] = encoder(key) // eg. xxhash.Sum(key)
 		kn.calculate(&idx)
+		item.Ok = idx[kn.hloc] != 0
 
 		for i = 0; i < kn.hloc; i++ {
 			for j = 0; j < kn.width; j++ {
 				n = idx[i] + j
 				if kn.key[n] == idx[kn.hloc] {
-					copy(kn.key[n:n+kn.width-j], kn.key[n+1:n+1+kn.width-j]) // shift segment
-					kn.key[idx[i]+kn.width-1] = 0                            // wipe tail
+					if j != kn.width-1 {
+						// [ a b c ] -> [ a b 0 ] remove c by clear tail
+						// [ a b c ] -> [ a c 0 ] remove b by c << 1 and clear tail
+						// [ a b c ] -> [ b c 0 ] remove a by b,c << 1 and clear tail
+						copy(kn.key[n:n+kn.width-j], kn.key[n+1:n+kn.width-j]) // shift segment over
+					}
+					kn.key[n+kn.width-j-1] = 0 // clear tail
+
 					kn.count--
+					item.Exist = true
+					return
 				}
 			}
 		}
 
-		return false
+		return
 	}
 }
 
 // Insert into *KEON.
 //
-//	Ok flag on insert success
-//	Exist flag when already present (or collision)
+//	boolean for updateable
+//	nil to bypass key hasher and use raw [8]byte
+//
+//	Ok      flag on insert success
+//	Exist   flag when already present (or collision)
 //	NoSpace flag with at capacity or shuffler failure
-func (kn *KEON) Insert(update bool) func(key []byte) struct{ Ok, Exist, NoSpace bool } {
+func (kn *KEON) Insert(update bool) func([]byte) struct{ Ok, Exist, NoSpace bool } {
+	return kn.insert(update, xxhash.Sum)
+}
+func (kn *KEON) RawInsert(update bool) func([]byte) struct{ Ok, Exist, NoSpace bool } {
+	return kn.insert(update, func(raw []byte) uint64 { return binary.BigEndian.Uint64(raw) })
+}
+func (kn *KEON) insert(update bool, encoder func([]byte) uint64) func([]byte) struct{ Ok, Exist, NoSpace bool } {
 
-	var idx [4]uint64 // index locations
-	var n, i, j uint64
-	var ix, jx uint64
-	var empty bool
+	var idx [4]uint64  // index locations + key
+	var n, i, j uint64 // counters
+	var ix, jx uint64  // counters
+	var empty bool     // flags
 
 	var node [2]uint64
 	var cyclic map[[2]uint64]uint8
 
-	return func(key []byte) (result struct{ Ok, Exist, NoSpace bool }) {
+	return func(key []byte) (item struct{ Ok, Exist, NoSpace bool }) {
 
 		if kn.count == kn.max {
-			result.NoSpace = true
+			item.NoSpace = true
 			return
 		}
 
-		idx[kn.hloc] = xxhash.Sum(key)
+		idx[kn.hloc] = encoder(key) // xxhash.Sum(key)
 		kn.calculate(&idx)
 		empty = false
 
 		// verify not already present in any target index location
-		// and record the next insertion point while checking
+		// and record the next empty insertion point during check
 		for i = 0; i < kn.hloc; i++ {
 			for j = 0; j < kn.width; j++ {
 				n = idx[i] + j
-				if kn.key[n] == idx[kn.hloc] {
-					result.Exist = true
-					if !update {
-						return
+				if kn.key[n] == 0 {
+					if !empty {
+						empty = true
+						ix, jx = i, j
 					}
+					continue
 				}
-				if kn.key[n] == 0 && !empty {
-					empty = true
-					ix, jx = i, j
+				if kn.key[n] == idx[kn.hloc] {
+					item.Exist = true
+					item.Ok = update
+					return
 				}
 			}
 		}
@@ -304,11 +368,11 @@ func (kn *KEON) Insert(update bool) func(key []byte) struct{ Ok, Exist, NoSpace 
 		if empty {
 			kn.key[idx[ix]+jx] = idx[kn.hloc]
 			kn.count++
-			result.Ok = true
+			item.Ok = true
 			return
 		}
 
-		// shuffle and displace a key to allow for current key insertion using an
+		// shuffle and displace a random key to allow for current key insertion using an
 		// outer loop composed of many short inner shuffles that succeed or fail quickly
 		// to cycle over many alternate short path swaps that abort on cyclic movements
 		var random [8]byte
@@ -317,10 +381,10 @@ func (kn *KEON) Insert(update bool) func(key []byte) struct{ Ok, Exist, NoSpace 
 
 			for {
 				rand.Read(random[:])
-				ix = idx[binary.LittleEndian.Uint64(random[:8])%kn.hloc] // select random altenate index to use
-				n = ix + (uint64(random[7]) % kn.width)                  // select random key to displace and swap
-				node = [2]uint64{ix, idx[kn.hloc]}                       // cyclic node generation; index and key
-				cyclic[node]++                                           // cyclic recurrent node movement tracking
+				ix = idx[binary.BigEndian.Uint64(random[:8])%kn.hloc] // select random altenate index to use
+				n = ix + (uint64(random[7]) % kn.width)               // select random key to displace and swap
+				node = [2]uint64{ix, idx[kn.hloc]}                    // cyclic node generation; index and key
+				cyclic[node]++                                        // cyclic recurrent node movement tracking
 				if cyclic[node] > uint8(kn.width) || len(cyclic) == kn.tracker {
 					break // reset cyclic path tracker and jump tracks by picking a new random index
 					// and key to displace as this gives us about ~2x faster performance boost by
@@ -337,7 +401,7 @@ func (kn *KEON) Insert(update bool) func(key []byte) struct{ Ok, Exist, NoSpace 
 							if kn.key[n] == 0 { // a new location for displaced key
 								kn.key[n] = idx[kn.hloc]
 								kn.count++
-								result.Ok = true
+								item.Ok = true
 								return
 							}
 						}
@@ -348,7 +412,7 @@ func (kn *KEON) Insert(update bool) func(key []byte) struct{ Ok, Exist, NoSpace 
 		}
 
 		// ran out of key shuffle options
-		result.NoSpace = true
+		item.NoSpace = true
 		return
 	}
 }

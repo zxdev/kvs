@@ -119,27 +119,3 @@ func main() {
 
 	}
 }
-
-// // detect kvs type; assurance
-// func detect(fn *string) (kind struct {
-// 	Keon, Keva bool
-// }) {
-
-// 	switch {
-// 	case strings.HasSuffix(*fn, ".keon"):
-// 		kind.Keon = !kind.Keon
-// 	case strings.HasSuffix(*fn, ".keva"):
-// 		kind.Keva = !kind.Keva
-// 	default:
-// 		_, err := os.Stat(*fn + ".keon")
-// 		if kind.Keon = !errors.Is(err, fs.ErrNotExist); kind.Keon {
-// 			*fn += ".keon"
-// 			return
-// 		}
-// 		_, err = os.Stat(*fn + ".keva")
-// 		if kind.Keva = !errors.Is(err, fs.ErrNotExist); kind.Keva {
-// 			*fn += ".keva"
-// 		}
-// 	}
-// 	return
-// }

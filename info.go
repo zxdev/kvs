@@ -1,8 +1,8 @@
 package kvs
 
 import (
-	"bufio"
-	"fmt"
+	"encoding/binary"
+	"io"
 	"os"
 )
 
@@ -19,14 +19,26 @@ func Info(path string) (info struct {
 
 	f, err := os.Open(path)
 	if err == nil {
-		buf := bufio.NewReader(f)
-		_, err = fmt.Fscanln(buf, &info.Signature, &info.Checksum, &info.Timestamp, &info.Count, &info.Max,
-			&info.Depth, &info.Width, &info.Density, &info.Shuffler, &info.Tracker)
+		var header [80]byte
+		var n int
+		n, err = io.ReadFull(f, header[:])
+		if n == 80 && err == nil {
+			info.Signature = binary.BigEndian.Uint64(header[:8])
+			info.Checksum = binary.BigEndian.Uint64(header[8:16])
+			info.Timestamp = binary.BigEndian.Uint64(header[16:24])
+			info.Count = binary.BigEndian.Uint64(header[24:32])
+			info.Max = binary.BigEndian.Uint64(header[32:40])
+			info.Depth = binary.BigEndian.Uint64(header[40:48])
+			info.Width = binary.BigEndian.Uint64(header[48:56])
+			info.Density = binary.BigEndian.Uint64(header[56:64])
+			info.Shuffler = binary.BigEndian.Uint64(header[64:72])
+			info.Tracker = binary.BigEndian.Uint64(header[72:])
+		}
 		f.Close()
 	}
 
-	// validate the header was readable and the header with a valid checksum, capacity, and signature
-	info.Ok = err == nil && info.Checksum > 0 && info.Max > 0 && info.Signature > 0xff00
+	// validate the header was readable and the header has a valid signature, checksum, and capacity
+	info.Ok = err == nil && info.Signature > 0xff00 && info.Checksum > 0 && info.Timestamp > 0 && info.Max > 0
 	return
 
 }
