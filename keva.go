@@ -42,6 +42,7 @@ import (
 // KEVA is a set-only hash table structure
 type KEVA struct {
 	path              string   // path to file
+	origin            int64    // origin timestamp represents creation or last disk image
 	count, max        uint64   // count of items, and max items
 	depth, width      uint64   // depth and width to establish hash bucket locations [ key|key|key ]
 	density, shuffler uint64   // options
@@ -74,12 +75,13 @@ func NewKEVA(n uint64, opt *Option) *KEVA {
 	opt.configure()
 
 	var kn = &KEVA{
-		hloc:     3,            // idx hash location in [4]uint64 for kn.calulate
-		max:      n,            // max items
-		width:    opt.Width,    // [ key|key|key ]
-		density:  opt.Density,  // density pading factor
-		shuffler: opt.Shuffler, // shuffler large cycle
-		tracker:  opt.Tracker,  // shuffler cycling tracker
+		origin:   time.Now().Unix(), // origin timestamp of creation or last save
+		hloc:     3,                 // idx hash location in [4]uint64 for kn.calulate
+		max:      n,                 // max items
+		width:    opt.Width,         // [ key|key|key ]
+		density:  opt.Density,       // density pading factor
+		shuffler: opt.Shuffler,      // shuffler large cycle
+		tracker:  opt.Tracker,       // shuffler cycling tracker
 	}
 
 	return kn.sizer(true)
@@ -133,9 +135,9 @@ func kevaLoader(path string, ttl time.Duration) (*KEVA, bool) {
 	io.ReadFull(buf, header[:])
 	signature = binary.BigEndian.Uint64(header[:8])
 	checksum = binary.BigEndian.Uint64(header[8:16])
-	// timestamp = binary.BigEndian.Uint64(header[16:24])
 	kn := &KEVA{
 		path:     path,
+		origin:   int64(binary.BigEndian.Uint64(header[16:24])),
 		hloc:     3,
 		count:    binary.BigEndian.Uint64(header[24:32]),
 		max:      binary.BigEndian.Uint64(header[32:40]),
@@ -258,6 +260,11 @@ func (kn *KEVA) Checksum() (checksum uint64) {
 	}
 	return checksum
 }
+
+// Origin timestamp of the *KEVA
+//
+//	this represents the creation or the base disk image loaded
+func (kn *KEVA) Origin() int64 { return kn.origin }
 
 // calculate target index locations using the current key hash via XOR with prime mixing
 func (kn *KEVA) calculate(idx *[4]uint64) {

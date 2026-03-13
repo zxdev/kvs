@@ -41,6 +41,7 @@ import (
 // KEON is a set-only hash table structure
 type KEON struct {
 	path              string   // path to file
+	origin            int64    // origin timestamp represents creation or last disk image
 	count, max        uint64   // count of items, and max items
 	depth, width      uint64   // depth and width to establish hash bucket locations [ key|key|key ]
 	density, shuffler uint64   // options
@@ -68,12 +69,13 @@ func NewKEON(n uint64, opt *Option) *KEON {
 	opt.configure()
 
 	var kn = &KEON{
-		hloc:     3,            // idx hash location in [4]uint64 for kn.calulate
-		max:      n,            // maximum size
-		width:    opt.Width,    // [ key|key|key ]
-		density:  opt.Density,  // density pading factor
-		shuffler: opt.Shuffler, // shuffler large cycle
-		tracker:  opt.Tracker,  // shuffler cycling tracker
+		origin:   time.Now().Unix(), // origin timestamp
+		hloc:     3,                 // idx hash location in [4]uint64 for kn.calulate
+		max:      n,                 // maximum size
+		width:    opt.Width,         // [ key|key|key ]
+		density:  opt.Density,       // density pading factor
+		shuffler: opt.Shuffler,      // shuffler large cycle
+		tracker:  opt.Tracker,       // shuffler cycling tracker
 	}
 
 	return kn.sizer(true)
@@ -126,9 +128,9 @@ func keonLoader(path string, ttl time.Duration) (*KEON, bool) {
 	io.ReadFull(buf, header[:])
 	signature = binary.BigEndian.Uint64(header[:8])
 	checksum = binary.BigEndian.Uint64(header[8:16])
-	// timestamp = binary.BigEndian.Uint64(header[16:24])
 	kn := &KEON{
 		path:     path,
+		origin:   int64(binary.BigEndian.Uint64(header[16:24])),
 		hloc:     3,
 		count:    binary.BigEndian.Uint64(header[24:32]),
 		max:      binary.BigEndian.Uint64(header[32:40]),
@@ -248,6 +250,11 @@ func (kn *KEON) Checksum() (checksum uint64) {
 	}
 	return checksum
 }
+
+// Origin timestamp of the *KEVA
+//
+//	this represents the creation or the base disk image loaded
+func (kn *KEON) Origin() int64 { return kn.origin }
 
 // calculate target index locations using the current key hash via XOR with prime mixing
 func (kn *KEON) calculate(idx *[4]uint64) {
