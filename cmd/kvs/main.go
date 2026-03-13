@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/zxdev/kvs"
 )
@@ -48,10 +49,10 @@ func main() {
 			size += 16
 		}
 
-		fmt.Println("\n ", filepath.Base(os.Args[1]))
+		fmt.Println("\n ", strings.Split(filepath.Base(os.Args[1]), ".")[0], kind)
 		fmt.Println("---------------------------------")
 		fmt.Println("checksum   :", info.Checksum)
-		fmt.Println("timestamp  :", kind, info.Timestamp)
+		fmt.Println("timestamp  :", time.Unix(int64(info.Timestamp), 0).Format("2006-01-02 15:04:05"))
 		fmt.Println("capacity   :", info.Max)
 		fmt.Println("count      :", info.Count)
 		fmt.Printf("format     : %d x %x\n", info.Depth, info.Width)
