@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"io"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/zxdev/xxhash"
@@ -76,16 +79,47 @@ func NewKEON(n uint64, opt *Option) *KEON {
 	return kn.sizer(true)
 }
 
-// LoadKEON a *KEON from disk and validate the checksum and signature.
+// LoadKEON loads a *KEON from disk and validates the checksum and resource signature.
 func LoadKEON(path string) (*KEON, bool) {
+	return keonLoader(path, 0)
+}
 
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, false // bad file
+// GetKEON downloads a *KEON using a url and validates the checksum and resource signature.
+func GetKEON(url string, ttl time.Duration) (*KEON, bool) {
+	// set a default timeout to prevent indefinate waits
+	if ttl == 0 {
+		ttl = time.Second * 30
 	}
-	defer f.Close()
+	return keonLoader(url, ttl)
+}
 
-	var buf = bufio.NewReader(f)
+// keonLoader builds a *KEON using a url or local disk file and
+// validates the checksum and the resouce signature type
+func keonLoader(path string, ttl time.Duration) (*KEON, bool) {
+
+	var reader io.Reader
+	if strings.Contains(path, "://") {
+		client := &http.Client{
+			Timeout: ttl,
+		}
+		resp, err := client.Get(path)
+		if err != nil {
+			return nil, false // bad remote or timeout
+		}
+		reader = resp.Body
+		path = filepath.Base(path)
+		defer resp.Body.Close()
+	}
+
+	if reader == nil {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, false // bad file
+		}
+		defer f.Close()
+	}
+
+	var buf = bufio.NewReader(reader)
 	var signature, checksum, index uint64
 	var header [80]byte
 	var k [8]byte
@@ -106,6 +140,7 @@ func LoadKEON(path string) (*KEON, bool) {
 	}
 	kn.sizer(false)
 
+	var err error
 	for {
 		_, err = io.ReadFull(buf, k[:])
 		if err != nil {

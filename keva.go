@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"io"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/zxdev/xxhash"
@@ -58,7 +61,7 @@ type KEVA struct {
 
 */
 
-// NewKEON is the *KEON constructor that accepts optional configuration settings.
+// NewKEVA is the *KEVA constructor that accepts optional configuration settings.
 func NewKEVA(n uint64, opt *Option) *KEVA {
 
 	if n == 0 {
@@ -82,18 +85,50 @@ func NewKEVA(n uint64, opt *Option) *KEVA {
 	return kn.sizer(true)
 }
 
-// Load a *KEVA from disk and validate the checksum and signature.
+// LoadKEVA loads a *KEVA from disk and validates
+// the checksum and resource signature.
 func LoadKEVA(path string) (*KEVA, bool) {
+	return kevaLoader(path, 0)
+}
 
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, false // bad file
+// GetKEVA downloads a *KEVA using a url and validates
+// the checksum and resource signature.
+func GetKEVA(url string, ttl time.Duration) (*KEVA, bool) {
+	if ttl == 0 {
+		ttl = time.Second * 30
 	}
-	defer f.Close()
+	return kevaLoader(url, ttl)
+}
+
+// kevaLoader builds a *KEVA using a url or local disk file and
+// validates the checksum and the resouce signature typefunc kevaLoader(path string, ttl time.Duration) (*KEVA, bool) {
+func kevaLoader(path string, ttl time.Duration) (*KEVA, bool) {
+
+	var reader io.Reader
+	if strings.Contains(path, "://") {
+		client := &http.Client{
+			Timeout: ttl,
+		}
+		resp, err := client.Get(path)
+		if err != nil {
+			return nil, false // bad remote or timeout
+		}
+		reader = resp.Body
+		path = filepath.Base(path)
+		defer resp.Body.Close()
+	}
+
+	if reader == nil {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, false // bad file
+		}
+		defer f.Close()
+	}
 
 	var signature, checksum, index uint64
 	var header [80]byte
-	var buf = bufio.NewReader(f)
+	var buf = bufio.NewReader(reader)
 	var kv [16]byte // uint64x2 k:8 v:8
 	io.ReadFull(buf, header[:])
 	signature = binary.BigEndian.Uint64(header[:8])
@@ -111,6 +146,8 @@ func LoadKEVA(path string) (*KEVA, bool) {
 		tracker:  int(binary.BigEndian.Uint64(header[72:])),
 	}
 	kn.sizer(false)
+
+	var err error
 	for {
 		_, err = io.ReadFull(buf, kv[:])
 		if err != nil {
