@@ -47,7 +47,7 @@ func MergeKEON(dst *KEON, path string, action interface{}) (result struct {
 
 			// use an assurance that we can only add new items
 			// so that we can track the new items
-			insert := dst.RawInsert(false)
+			insert := dst.patchInsert(false)
 			for {
 				n, err = r.Read(b[:])
 				if n == 0 || errors.Is(err, io.EOF) {
@@ -77,7 +77,7 @@ func MergeKEON(dst *KEON, path string, action interface{}) (result struct {
 
 		} else {
 
-			remove := dst.RawRemove()
+			remove := dst.patchRemove()
 			for {
 				n, err = r.Read(b[:])
 				if n == 0 || errors.Is(err, io.EOF) {
@@ -139,7 +139,7 @@ func MergeKEVA(dst *KEVA, path string, action interface{}) (result struct {
 
 			// we allow updates but keep track of the
 			// updated items for our new checksum
-			insert := dst.RawInsert(true)
+			insert := dst.patchInsert(true)
 			for {
 				n, err = r.Read(b[:])
 				if n == 0 || errors.Is(err, io.EOF) {
@@ -170,7 +170,7 @@ func MergeKEVA(dst *KEVA, path string, action interface{}) (result struct {
 
 		} else {
 
-			remove := dst.RawRemove()
+			remove := dst.patchRemove()
 			for {
 				n, err = r.Read(b[:])
 				if n == 0 || errors.Is(err, io.EOF) {

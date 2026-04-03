@@ -93,8 +93,8 @@ func main() {
 
 		switch info.Signature {
 		case 0xff01: // keon
-			kv, ok := kvs.LoadKEON(os.Args[1])
-			if ok {
+			var kv kvs.KEON
+			if kvs.LoadKEON(os.Args[1], &kv) {
 				lookup := kv.Lookup()
 				for _, v := range strings.Split(os.Args[2], ",") {
 					fmt.Println("keon:", v, lookup([]byte(v)))
@@ -102,8 +102,8 @@ func main() {
 			}
 
 		case 0xff02: // keva
-			kv, ok := kvs.LoadKEVA(os.Args[1])
-			if ok {
+			var kv kvs.KEVA
+			if kvs.LoadKEVA(os.Args[1], &kv) {
 				lookup := kv.Lookup()
 				for _, v := range strings.Split(os.Args[2], ",") {
 					item := lookup([]byte(v))

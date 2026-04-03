@@ -2,13 +2,11 @@ package kvs_test
 
 import (
 	"bufio"
-	"encoding/binary"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/zxdev/kvs"
-	"github.com/zxdev/xxhash"
 )
 
 // go test -v -run KEON
@@ -23,7 +21,7 @@ func TestKEON(t *testing.T) {
 	//     kvs_test.go:63: stats 0 10000000 0
 	// --- PASS: TestKEON (7.80s)
 
-	size := uint64(10000000)           // 10MM
+	size := 10000000                   // 10MM
 	var opt = &kvs.Option{Density: 25} // 97.50%, default starting density factor
 	kn := kvs.NewKEON(size, opt)
 	insert := kn.Insert(false)
@@ -31,7 +29,7 @@ func TestKEON(t *testing.T) {
 	remove := kn.Remove()
 
 	t0 := time.Now()
-	for i := uint64(0); i < size; i++ {
+	for i := uint64(0); i < uint64(size); i++ {
 		if !insert([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}).Ok {
 			t.Log("insert failure", i)
 			t.FailNow()
@@ -41,7 +39,7 @@ func TestKEON(t *testing.T) {
 	t.Logf("insert %.4vs %.4v", t1, float64(size)/t1.Seconds())
 
 	t0 = time.Now()
-	for i := uint64(0); i < size; i++ {
+	for i := uint64(0); i < uint64(size); i++ {
 		if !lookup([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}) {
 			t.Log("lookup failure", i)
 			t.FailNow()
@@ -54,7 +52,12 @@ func TestKEON(t *testing.T) {
 	t.Log("stats", kn.Len(), kn.Cap(), kn.Checksum())
 
 	t0 = time.Now()
-	for i := uint64(0); i < size; i++ {
+	kn.Checksum()
+	t1 = time.Since(t0)
+	t.Log("checksum", t1)
+
+	t0 = time.Now()
+	for i := uint64(0); i < uint64(size); i++ {
 		if !remove([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}).Exist {
 			t.Log("remove failure", i)
 			t.FailNow()
@@ -76,14 +79,14 @@ func TestKEVA(t *testing.T) {
 	//     kvs_test.go:88: stats 10000000 10000000 16259743542975096488
 	// --- PASS: TestKEVA (10.11s)
 
-	size := uint64(10000000) // 10MM
-	var opt = &kvs.Option{}  // 97.50%, default starting density factor
+	size := 10000000        // 10MM
+	var opt = &kvs.Option{} // 97.50%, default starting density factor
 	kn := kvs.NewKEVA(size, opt)
 	insert := kn.Insert(false) // no update
 	lookup := kn.Lookup()
 
 	t0 := time.Now()
-	for i := uint64(0); i < size; i++ {
+	for i := uint64(0); i < uint64(size); i++ {
 		if item := insert([]byte{byte(i % 255), byte(i % 127), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}, i); !item.Ok || item.Exist || item.NoSpace {
 			t.Log("insert failure", i, item)
 			t.FailNow()
@@ -92,7 +95,7 @@ func TestKEVA(t *testing.T) {
 	t1 := time.Since(t0)
 	t.Logf("insert %.4vs %.4v", t1, float64(size)/t1.Seconds())
 
-	for i := uint64(0); i < size; i++ {
+	for i := uint64(0); i < uint64(size); i++ {
 		if item := lookup([]byte{byte(i % 255), byte(i % 127), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}); !item.Ok || item.Value != i {
 			t.Log("lookup failure", i, item)
 			t.FailNow()
@@ -133,13 +136,13 @@ func TestFormat(t *testing.T) {
 	// 053c232042e3b909 cfe8d9d936564c38 3a720afd4278fee5
 	// --- PASS: TestFormat (0.00s)
 
-	size := uint64(30)
+	size := 30
 	kn := kvs.NewKEON(size, &kvs.Option{Density: 1000}) // perfect hash
 	insert := kn.Insert(false)
 	remove := kn.Remove()
 
 	var bb [][8]byte
-	for i := uint64(0); i < size; i++ {
+	for i := uint64(0); i < uint64(size); i++ {
 		bb = append(bb, [8]byte{0, 0, 0, byte(i) + 1, 0, 0, 0, 0})
 	}
 
@@ -195,7 +198,7 @@ func TestBestFit(t *testing.T) {
 	// --- PASS: TestBestFit (1.98s)
 	// PASS
 
-	var size = uint64(1000000)                                 // 1MM
+	var size = 1000000                                         // 1MM
 	var opt = &kvs.Option{Density: 1, Width: 3, Shuffler: 500} // 99.98% starting density factor
 	var t0 time.Time
 	var t1 time.Duration
@@ -206,7 +209,7 @@ func TestBestFit(t *testing.T) {
 		insert := kn.Insert(false) // no update
 		lookup := kn.Lookup()
 		t0 = time.Now()
-		for i := uint64(0); i < size; i++ {
+		for i := uint64(0); i < uint64(size); i++ {
 			if fail = insert([]byte{byte(i % 255), byte(i % 127), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 127), byte(i % 99)}).NoSpace; fail {
 				break
 			}
@@ -231,7 +234,7 @@ func TestBestFit(t *testing.T) {
 			t.Logf("kvs: build [%d,%d,%d] %.0f/sec", opt.Density, opt.Shuffler, opt.Width, float64(kn.Len())/t1.Seconds())
 
 			t0 = time.Now()
-			for i := uint64(0); i < size; i++ {
+			for i := uint64(0); i < uint64(size); i++ {
 				if !lookup([]byte{byte(i % 255), byte(i % 127), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 127), byte(i % 99)}) {
 					t.Log("lookup failure")
 					t.FailNow()
@@ -254,20 +257,20 @@ func TestInfo(t *testing.T) {
 	// --- PASS: TestInfo (0.42s)
 	// PASS
 
-	size := uint64(1000000)
+	size := 1000000
 	os.Mkdir("sandbox", 0755)
 	k1 := "sandbox/info.keon"
 	defer os.Remove(k1)
 
 	kn := kvs.NewKEON(size, nil)
 	insert := kn.Insert(false)
-	for i := uint64(0); i < size; i++ {
+	for i := uint64(0); i < uint64(size); i++ {
 		if !insert([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}).Ok {
 			t.Log("insert failure", i)
 			t.FailNow()
 		}
 	}
-	kn.Write(k1)
+	kvs.SaveKEON(k1, kn)
 
 	// info.keon
 	// ---------------------------------
@@ -289,38 +292,38 @@ func TestInfo(t *testing.T) {
 
 }
 
-// go test -v -run Export
-func TestExport(t *testing.T) {
+// // go test -v -run Export
+// func TestExport(t *testing.T) {
 
-	// 	=== RUN   TestExport
-	// kvs_test.go:233: == export ==
-	// kvs_test.go:314: [31 195 84 228 51 63 96 131]
-	// kvs_test.go:314: [121 46 62 219 47 170 189 234]
-	// 	...
-	// kvs_test.go:314: [221 72 254 87 73 92 145 245]
-	// kvs_test.go:314: [220 28 228 214 84 204 103 159]
-	// --- PASS: TestExport (0.00s)
-	// PASS
+// 	// 	=== RUN   TestExport
+// 	// kvs_test.go:233: == export ==
+// 	// kvs_test.go:314: [31 195 84 228 51 63 96 131]
+// 	// kvs_test.go:314: [121 46 62 219 47 170 189 234]
+// 	// 	...
+// 	// kvs_test.go:314: [221 72 254 87 73 92 145 245]
+// 	// kvs_test.go:314: [220 28 228 214 84 204 103 159]
+// 	// --- PASS: TestExport (0.00s)
+// 	// PASS
 
-	size := uint64(50)
-	kn := kvs.NewKEON(size, nil)
-	insert := kn.Insert(false)
-	for i := uint64(0); i < size; i++ {
-		if !insert([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}).Ok {
-			t.Log("insert failure", i)
-			t.FailNow()
-		}
-	}
+// 	size := uint64(50)
+// 	kn := kvs.NewKEON(size, nil)
+// 	insert := kn.Insert(false)
+// 	for i := uint64(0); i < size; i++ {
+// 		if !insert([]byte{byte(i % 255), byte(i % 126), byte(i % 235), byte(i % 254), byte(i % 249), byte(i % 197), byte(i % 17), byte(i % 99)}).Ok {
+// 			t.Log("insert failure", i)
+// 			t.FailNow()
+// 		}
+// 	}
 
-	var count int
-	t.Log("== export ==")
-	next := kn.Export()
-	for b := [8]byte{}; next(&b); {
-		count++
-		t.Log(count, b)
-	}
+// 	var count int
+// 	t.Log("== export ==")
+// 	next := kn.Export()
+// 	for b := [8]byte{}; next(&b); {
+// 		count++
+// 		t.Log(count, b)
+// 	}
 
-}
+// }
 
 // go test -v -run Alexa
 func TestAlexa(t *testing.T) {
@@ -339,7 +342,7 @@ func TestAlexa(t *testing.T) {
 	f, _ := os.Open(path)
 	defer f.Close()
 
-	var count uint64
+	var count int
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		count++
@@ -359,12 +362,12 @@ func TestAlexa(t *testing.T) {
 	}
 	t.Log("insert", time.Since(t0))
 	t.Log("write", alexa)
-	kv.Write(alexa)
+	kvs.SaveKEON(alexa, kv)
 	t.Log(kv.Cap(), kv.Len())
 
 	f.Seek(0, 0)
 
-	kv, _ = kvs.LoadKEON(alexa)
+	kvs.LoadKEON(alexa, kv)
 	lookup := kv.Lookup()
 	scanner = bufio.NewScanner(f)
 	t0 = time.Now()
@@ -391,18 +394,18 @@ func TestUpdate(t *testing.T) {
 	f1 := "sandbox/test1.keon"
 	f2 := "sandbox/test2.keon"
 
-	size := uint64(100)
+	size := 100
 
 	kn1 := kvs.NewKEON(size, nil)
 	insert1 := kn1.Insert(false) // disallow updates
-	for i := uint64(0); i < size/2; i++ {
+	for i := uint64(0); i < uint64(size)/2; i++ {
 		if !insert1([]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0}).Ok {
 			t.Log("insert failure", i)
 			t.FailNow()
 		}
 	}
 	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
-	kn1.Write(f1)
+	kvs.LoadKEON(f1, kn1)
 
 	// test1
 	// ---------------------------------
@@ -416,15 +419,14 @@ func TestUpdate(t *testing.T) {
 
 	t.Log("== UPDATE ==")
 	var exist int
-	var ok bool
-	kn1, ok = kvs.LoadKEON(f1)
-	if !ok {
+
+	if !kvs.LoadKEON(f1, kn1) {
 		t.Log("failed", f1)
 		t.FailNow()
 	}
 	insert1 = kn1.Insert(true) // allow updates, flags r.Exist
 	// half already exist, other half are new
-	for i := uint64(25); i < size-25; i++ {
+	for i := uint64(25); i < uint64(size)-25; i++ {
 		r := insert1([]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0})
 		if r.Exist {
 			exist++
@@ -447,114 +449,112 @@ func TestUpdate(t *testing.T) {
 
 	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
 	t.Log("exist", exist)
-	kn1.Write(f2) // checksum 4927319418560608743
+	kvs.SaveKEON(f2, kn1) // checksum 4927319418560608743
 
 }
 
-func TestRaw(t *testing.T) {
+// func TestRaw(t *testing.T) {
 
-	// 	=== RUN   TestMerge
-	//     kvs_test.go:597: stats 50 100 4853821449203168217
-	//     kvs_test.go:623: stats 50 100 5373087661334553314
-	//     kvs_test.go:626: == MERGE KEONS ==
-	//     kvs_test.go:634: 25 4693302597208153643
-	//     kvs_test.go:646: stats 75 100 179520822399970802
-	// --- PASS: TestMerge (0.02s)
+// 	// 	=== RUN   TestMerge
+// 	//     kvs_test.go:597: stats 50 100 4853821449203168217
+// 	//     kvs_test.go:623: stats 50 100 5373087661334553314
+// 	//     kvs_test.go:626: == MERGE KEONS ==
+// 	//     kvs_test.go:634: 25 4693302597208153643
+// 	//     kvs_test.go:646: stats 75 100 179520822399970802
+// 	// --- PASS: TestMerge (0.02s)
 
-	f1 := "sandbox/test1.keon"
-	f2 := "sandbox/test2.keon"
-	defer os.Remove(f2)
-	defer os.Remove(f1)
+// 	f1 := "sandbox/test1.keon"
+// 	f2 := "sandbox/test2.keon"
+// 	defer os.Remove(f2)
+// 	defer os.Remove(f1)
 
-	size := uint64(100)
+// 	size := 100
 
-	kn1 := kvs.NewKEON(size, nil)
-	insert1 := kn1.Insert(false) // disallow updates
-	for i := uint64(0); i < size/2; i++ {
-		if !insert1([]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0}).Ok {
-			t.Log("insert failure", i)
-			t.FailNow()
-		}
-	}
-	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
-	kn1.Write(f1)
+// 	kn1 := kvs.NewKEON(size, nil)
+// 	insert1 := kn1.Insert(false) // disallow updates
+// 	for i := uint64(0); i < uint64(size)/2; i++ {
+// 		if !insert1([]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0}).Ok {
+// 			t.Log("insert failure", i)
+// 			t.FailNow()
+// 		}
+// 	}
+// 	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
+// 	kvs.SaveKEON(f1, kn1)
 
-	// test1
-	// ---------------------------------
-	// checksum   : 4853821449203168217
-	// timestamp  : keon 1726000636
-	// capacity   : 100
-	// count      : 50
-	// format     : 34 x 3
-	// density    : 25 102 [52]
-	// shuffler   : 500 x 50
+// 	// test1
+// 	// ---------------------------------
+// 	// checksum   : 4853821449203168217
+// 	// timestamp  : keon 1726000636
+// 	// capacity   : 100
+// 	// count      : 50
+// 	// format     : 34 x 3
+// 	// density    : 25 102 [52]
+// 	// shuffler   : 500 x 50
 
-	t.Log("== RAW UPDATE ==")
-	var exist int
-	var ok bool
-	kn1, ok = kvs.LoadKEON(f1)
-	if !ok {
-		t.Log("failed", f1)
-		t.FailNow()
-	}
+// 	t.Log("== RAW UPDATE ==")
+// 	var exist int
+// 	if !kvs.LoadKEON(f1, kn1) {
+// 		t.Log("failed", f1)
+// 		t.FailNow()
+// 	}
 
-	// generate a raw update set; a raw
-	// set requires [8]byte segments
-	var patch [][8]byte
-	var b [8]byte
-	for i := uint64(25); i < size-25; i++ {
-		// generate the hashed bytes for the patch, store as uint64 set
-		binary.BigEndian.PutUint64(b[:], xxhash.Sum([]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0}))
-		patch = append(patch, b)
-	}
+// 	// generate a raw update set; a raw
+// 	// set requires [8]byte segments
+// 	var patch [][8]byte
+// 	var b [8]byte
+// 	for i := uint64(25); i < uint64(size)-25; i++ {
+// 		// generate the hashed bytes for the patch, store as uint64 set
+// 		binary.BigEndian.PutUint64(b[:], xxhash.Sum([]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0}))
+// 		patch = append(patch, b)
+// 	}
 
-	insert1 = kn1.RawInsert(true) // signals raw with updateable keys
-	// half already exists, other half are new
-	for i := range patch {
-		r := insert1(patch[i][:])
-		if r.Exist {
-			exist++
-		}
-		if !r.Ok {
-			t.Log(i, r)
-			t.FailNow()
-		}
-	}
+// 	insert1 = kn1.PatchInsert(true) // signals raw with updateable keys
+// 	// half already exists, other half are new
+// 	for i := range patch {
+// 		r := insert1(patch[i][:])
+// 		if r.Exist {
+// 			exist++
+// 		}
+// 		if !r.Ok {
+// 			t.Log(i, r)
+// 			t.FailNow()
+// 		}
+// 	}
 
-	// test2
-	// ---------------------------------
-	// checksum   : 179520822399970802
-	// timestamp  : keon 1726000636
-	// capacity   : 100
-	// count      : 75
-	// format     : 34 x 3
-	// density    : 25 102 [27]
-	// shuffler   : 500 x 50
+// 	// test2
+// 	// ---------------------------------
+// 	// checksum   : 179520822399970802
+// 	// timestamp  : keon 1726000636
+// 	// capacity   : 100
+// 	// count      : 75
+// 	// format     : 34 x 3
+// 	// density    : 25 102 [27]
+// 	// shuffler   : 500 x 50
 
-	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
-	t.Log("exist", exist)
-	kn1.Write(f2)
+// 	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
+// 	t.Log("exist", exist)
+// 	kvs.LoadKEON(f1, kn1)
 
-	t.Log("== RAW REMOVE ==")
-	remove1 := kn1.RawRemove()
-	if !remove1(patch[0][:]).Exist {
-		t.Log("remove raw[0] failure")
-		t.FailNow()
-	}
-	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
-	kn1.Write(f2)
+// 	t.Log("== RAW REMOVE ==")
+// 	remove1 := kn1.PatchRemove()
+// 	if !remove1(patch[0][:]).Exist {
+// 		t.Log("remove raw[0] failure")
+// 		t.FailNow()
+// 	}
+// 	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
+// 	kvs.LoadKEON(f2, kn1)
 
-	// test2
-	// ---------------------------------
-	// checksum   : 2082901812776260895
-	// timestamp  : keon 1726012661
-	// capacity   : 100
-	// count      : 74
-	// format     : 34 x 3
-	// density    : 25 102 [28]
-	// shuffler   : 500 x 50
+// 	// test2
+// 	// ---------------------------------
+// 	// checksum   : 2082901812776260895
+// 	// timestamp  : keon 1726012661
+// 	// capacity   : 100
+// 	// count      : 74
+// 	// format     : 34 x 3
+// 	// density    : 25 102 [28]
+// 	// shuffler   : 500 x 50
 
-}
+// }
 
 func TestMerge(t *testing.T) {
 
@@ -572,11 +572,11 @@ func TestMerge(t *testing.T) {
 	defer os.Remove(f2)
 	defer os.Remove(f3)
 
-	size := uint64(100)
+	size := 100
 
 	kn1 := kvs.NewKEON(size, nil)
 	insert1 := kn1.Insert(false) // disallow updates
-	for i := uint64(0); i < size/2; i++ {
+	for i := uint64(0); i < uint64(size)/2; i++ {
 		if !insert1([]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0}).Ok {
 			t.Log("insert failure", i)
 			t.FailNow()
@@ -594,14 +594,14 @@ func TestMerge(t *testing.T) {
 	// shuffler   : 500 x 50
 
 	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
-	kn1.Write(f1)
+	kvs.SaveKEON(f1, kn1)
 
 	// create new KEON where half the items
 	// already exist and other half are new
 
 	kn2 := kvs.NewKEON(size, nil)
 	insert2 := kn2.Insert(false)
-	for i := uint64(25); i < size-25; i++ {
+	for i := uint64(25); i < uint64(size)-25; i++ {
 		r := insert2([]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0})
 		if !r.Ok {
 			t.Log(i, r)
@@ -620,7 +620,7 @@ func TestMerge(t *testing.T) {
 	// shuffler   : 500 x 50
 
 	t.Log("stats", kn2.Len(), kn2.Cap(), kn2.Checksum())
-	kn2.Write(f2)
+	kvs.SaveKEON(f2, kn2)
 
 	t.Log("== MERGE KEONS ==")
 
@@ -643,5 +643,48 @@ func TestMerge(t *testing.T) {
 	// shuffler   : 500 x 50
 
 	t.Log("stats", kn1.Len(), kn1.Cap(), kn1.Checksum())
-	kn1.Write(f3)
+	kvs.SaveKEON(f3, kn1)
+}
+
+func TestImporter(t *testing.T) {
+
+	f, _ := os.Open("sandbox/gdim.keon")
+	defer f.Close()
+	var kn kvs.KEON
+	kn.Importer(f)
+	t.Log(kn.Origin())
+	t.Log(kn.Checksum())
+	t.Log(kn.Cap())
+	t.Log(kn.Len())
+
+	lookup := kn.Lookup()
+	t.Log(lookup([]byte("google.com")))
+
+}
+
+func TestPackager(t *testing.T) {
+
+	var target = "sandbox/packager.keon"
+	os.Remove(target)
+
+	var kn = kvs.NewKEON(100, nil)
+	var insert = kn.Insert(false)
+	for i := 0; i < 96; i++ {
+		insert([]byte{byte(i + 1), 0, 0, 0, 0, 0, 0, 0})
+	}
+	w, _ := os.Create(target)
+	kn.Packager(w, 1)
+	w.Close()
+
+	r, _ := os.Open(target)
+	kn = kvs.NewKEON(100, nil)
+	info := kn.Patcher(r)
+	r.Close()
+	t.Log(info.Signature)
+	t.Log(info.Checksum)
+	t.Log(info.Origin)
+	t.Log(info.Count)
+	lookup := kn.Lookup()
+	t.Log(lookup([]byte{25, 0, 0, 0, 0, 0, 0, 0}))
+
 }

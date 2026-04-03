@@ -42,7 +42,7 @@ func main() {
 		if err == nil {
 			defer f.Close()
 
-			var count uint64
+			var count int
 			scanner := bufio.NewScanner(f)
 			for scanner.Scan() {
 				count++
@@ -67,7 +67,8 @@ func main() {
 				}
 			}
 
-			kv.Write(os.Args[1] + ".keva")
+			kvs.SaveKEVA(os.Args[1]+".keon", kv)
+
 		}
 
 	}

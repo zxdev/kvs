@@ -1,14 +1,11 @@
 package kvs
 
 import (
-	"bufio"
 	"crypto/rand"
 	"encoding/binary"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/zxdev/xxhash"
@@ -41,13 +38,12 @@ import (
 
 // KEVA is a set-only hash table structure
 type KEVA struct {
-	path              string   // path to file
+	name              string   // source name
 	origin            int64    // origin timestamp represents creation or last disk image
 	count, max        uint64   // count of items, and max items
 	depth, width      uint64   // depth and width to establish hash bucket locations [ key|key|key ]
 	density, shuffler uint64   // options
 	tracker           int      // options
-	hloc              uint64   // idx hash key location in [4]uint64; 3
 	key               []uint64 // key slice
 	value             []uint64 // value slice
 
@@ -57,17 +53,14 @@ type KEVA struct {
 }
 
 /*
-	KEVA package level functions
-		NewKEVA, Info, Load
+
+	kvs package level generational functions
+		NewKEVA, LoadKEVA, SaveKEVA
 
 */
 
 // NewKEVA is the *KEVA constructor that accepts optional configuration settings.
-func NewKEVA(n uint64, opt *Option) *KEVA {
-
-	if n == 0 {
-		return nil
-	}
+func NewKEVA(n int, opt *Option) *KEVA {
 
 	if opt == nil {
 		opt = new(Option)
@@ -75,9 +68,9 @@ func NewKEVA(n uint64, opt *Option) *KEVA {
 	opt.configure()
 
 	var kn = &KEVA{
+		name:     "kvs.keva",
 		origin:   time.Now().Unix(), // origin timestamp of creation or last save
-		hloc:     3,                 // idx hash location in [4]uint64 for kn.calulate
-		max:      n,                 // max items
+		max:      uint64(n),         // max items
 		width:    opt.Width,         // [ key|key|key ]
 		density:  opt.Density,       // density pading factor
 		shuffler: opt.Shuffler,      // shuffler large cycle
@@ -87,149 +80,204 @@ func NewKEVA(n uint64, opt *Option) *KEVA {
 	return kn.sizer(true)
 }
 
-// LoadKEVA loads a *KEVA from disk and validates
-// the checksum and resource signature.
-func LoadKEVA(path string) (*KEVA, bool) {
-	return kevaLoader(path, 0)
-}
+// LoadKEVA from disk and validate the checksum and signature.
+func LoadKEVA(path string, kn *KEVA) (ok bool) {
 
-// GetKEVA downloads a *KEVA using a url and validates
-// the checksum and resource signature.
-func GetKEVA(url string, ttl time.Duration) (*KEVA, bool) {
-	if ttl == 0 {
-		ttl = time.Second * 30
-	}
-	return kevaLoader(url, ttl)
-}
-
-// kevaLoader builds a *KEVA using a url or local disk file and
-// validates the checksum and the resouce signature typefunc kevaLoader(path string, ttl time.Duration) (*KEVA, bool) {
-func kevaLoader(path string, ttl time.Duration) (*KEVA, bool) {
-
-	var reader io.Reader
-	if strings.Contains(path, "://") {
-		client := &http.Client{
-			Timeout: ttl,
-		}
-		resp, err := client.Get(path)
-		if err != nil {
-			return nil, false // bad remote or timeout
-		}
-		reader = resp.Body
-		path = filepath.Base(path)
-		defer resp.Body.Close()
-	}
-
-	if reader == nil {
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, false // bad file
-		}
-		defer f.Close()
-	}
-
-	var signature, checksum, index uint64
-	var header [80]byte
-	var buf = bufio.NewReader(reader)
-	var kv [16]byte // uint64x2 k:8 v:8
-	io.ReadFull(buf, header[:])
-	signature = binary.BigEndian.Uint64(header[:8])
-	checksum = binary.BigEndian.Uint64(header[8:16])
-	kn := &KEVA{
-		path:     path,
-		origin:   int64(binary.BigEndian.Uint64(header[16:24])),
-		hloc:     3,
-		count:    binary.BigEndian.Uint64(header[24:32]),
-		max:      binary.BigEndian.Uint64(header[32:40]),
-		depth:    binary.BigEndian.Uint64(header[40:48]),
-		width:    binary.BigEndian.Uint64(header[48:56]),
-		density:  binary.BigEndian.Uint64(header[56:64]),
-		shuffler: binary.BigEndian.Uint64(header[64:72]),
-		tracker:  int(binary.BigEndian.Uint64(header[72:])),
-	}
-	kn.sizer(false)
-
-	var err error
-	for {
-		_, err = io.ReadFull(buf, kv[:])
-		if err != nil {
-			// io.EOF or io.UnexpectedEOF
-			return kn, checksum == kn.Checksum() && signature == 0xff02
-		}
-		kn.key[index] = binary.BigEndian.Uint64(kv[:8])
-		kn.value[index] = binary.BigEndian.Uint64(kv[8:])
-		index++
-	}
-
-}
-
-/*
-	KEVA file i/o methods
-		KEVA.Load
-		kn.Write, kn.Save
-
-*/
-
-// Write *KEVA to disk at path.
-func (kn *KEVA) Write(path string) error {
-	kn.path = path
-	return kn.Save()
-}
-
-// Save *KEVA to disk at prior Load/Write path
-func (kn *KEVA) Save() error {
-
-	if len(kn.path) == 0 {
-		kn.path = "kvs.keva"
-	}
-
-	f, err := os.Create(kn.path)
+	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return // bad file
 	}
 	defer f.Close()
 
-	// 0xff02 is the keva header signature type
-	var buf = bufio.NewWriter(f)
-	var b [8]byte
+	kn.name = filepath.Base(path)
+	return kn.Importer(f)
+}
+
+// SaveKEVA to disk with checksum and timestamp
+func SaveKEVA(path string, kn *KEVA) (ok bool) {
+
+	f, err := os.Create(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	return kn.Exporter(f)
+}
+
+/*
+
+	KEVA package level generational functions
+		Importer, Exporter
+		Packager, Patcher
+
+*/
+
+// Importer reads the header:keon from the io.Reader and returns
+// the keon origin unix timestamp
+func (kn *KEVA) Importer(r io.Reader) (ok bool) {
+
+	var header [80]byte
+	r.Read(header[:])
+
+	// validate KEVA signature 0xff02
+	if binary.BigEndian.Uint64(header[:8]) != 0xff02 {
+		return
+	}
+
+	// configure keon settings from header metadata
+	if len(kn.name) == 0 {
+		kn.name = "stream"
+	}
+	kn.origin = int64(binary.BigEndian.Uint64(header[16:24]))
+	kn.count = binary.BigEndian.Uint64(header[24:32])
+	kn.max = binary.BigEndian.Uint64(header[32:40])
+	kn.depth = binary.BigEndian.Uint64(header[40:48])
+	kn.width = binary.BigEndian.Uint64(header[48:56])
+	kn.density = binary.BigEndian.Uint64(header[56:64])
+	kn.shuffler = binary.BigEndian.Uint64(header[64:72])
+	kn.tracker = int(binary.BigEndian.Uint64(header[72:]))
+	kn.sizer(false)
+
+	var b [16]byte
+	var n int
+	var err error
+	for i := range kn.key {
+		n, err = r.Read(b[:])
+		if n != 8 || err != nil {
+			break
+		}
+		kn.key[i] = binary.BigEndian.Uint64(b[:8])
+		kn.value[i] = binary.BigEndian.Uint64(b[8:])
+	}
+
+	// validate the CHECKSUM match
+	if binary.BigEndian.Uint64(header[8:16]) != kn.Checksum() {
+		return
+	}
+
+	return true
+}
+
+// Exporter writes the header:keva to the io.Writer
+func (kn *KEVA) Exporter(w io.Writer) (ok bool) {
+
+	// write the header
+	var n int
+	var err error
+	var b [16]byte
 	for _, v := range []uint64{
 		0xff02, kn.Checksum(), uint64(time.Now().Unix()),
 		kn.count, kn.max, kn.depth, kn.width, kn.density, kn.shuffler, uint64(kn.tracker),
 	} {
-		binary.BigEndian.PutUint64(b[:], v)
-		buf.Write(b[:])
+		binary.BigEndian.PutUint64(b[:8], v)
+		n, err = w.Write(b[:8])
+		if n != 8 || err != nil {
+			return
+		}
 	}
 
+	// write the data
 	for i := uint64(0); i < uint64(len(kn.key)); i++ {
-		binary.BigEndian.PutUint64(b[:], kn.key[i])
-		buf.Write(b[:])
-		binary.BigEndian.PutUint64(b[:], kn.value[i])
-		buf.Write(b[:])
+		binary.BigEndian.PutUint64(b[:8], kn.key[i])
+		binary.BigEndian.PutUint64(b[8:], kn.value[i])
+		n, err = w.Write(b[:])
+		if n != 8 || err != nil {
+			return
+		}
 	}
 
-	buf.Flush()
-	return f.Sync()
+	return true
 }
 
-// Export all bucket hash data excluding empty buckets
-func (kn *KEVA) Export() func(*[8]byte, *[8]byte) bool {
-	var item int
-	return func(k, v *[8]byte) bool {
-		for item < len(kn.key) {
-			if kn.key[item] == 0 {
-				item++
-				continue
-			}
-			binary.BigEndian.PutUint64(k[:], kn.key[item])
-			binary.BigEndian.PutUint64(v[:], kn.value[item])
-			item++
-			return true
+// Packager exports a patch data package excluding empty buckets
+// for the designated action (1:insert, 0:remove)
+//
+//	action: 1 insert (0xff22)
+//	action: 0 remove (0xff12)
+func (kn *KEVA) Packager(w io.Writer, action int) {
+
+	// write the patch header
+	var n int
+	var err error
+	var b [16]byte
+	for _, v := range []uint64{
+		0xff02 | uint64(action+1)<<4, kn.Checksum(), uint64(time.Now().Unix()), kn.count,
+	} {
+		binary.BigEndian.PutUint64(b[:8], v)
+		n, err = w.Write(b[:8])
+		if n != 8 || err != nil {
+			return
 		}
-		return false
 	}
+
+	// write the patch data
+	for i := uint64(0); i < uint64(len(kn.key)); i++ {
+		if kn.key[i] == 0 {
+			continue
+		}
+		binary.BigEndian.PutUint64(b[:8], kn.key[i])
+		binary.BigEndian.PutUint64(b[8:], kn.value[i])
+		n, err = w.Write(b[:])
+		if n != 8 || err != nil {
+			return
+		}
+	}
+
+}
+
+// Patcher applies a patch data package
+func (kn *KEVA) Patcher(r io.Reader) (info struct {
+	Signature uint64
+	Checksum  uint64
+	Origin    uint64
+	Count     uint64
+}) {
+
+	var header [32]byte
+	r.Read(header[:])
+
+	info.Signature = binary.BigEndian.Uint64(header[:8])
+	info.Checksum = binary.BigEndian.Uint64(header[8:16])
+	info.Origin = binary.BigEndian.Uint64(header[16:24])
+	info.Count = binary.BigEndian.Uint64(header[24:32])
+
+	// detect action by signature
+	switch info.Signature {
+	case 0xff12: // remove
+
+		remove := kn.patchRemove()
+		var b [16]byte
+		var n int
+		var err error
+		for i := 0; i < int(info.Count); i++ {
+			n, err = r.Read(b[:])
+			if n != 8 || err != nil {
+				break
+			}
+			remove(b[:8])
+		}
+
+	case 0xff22: // insert
+
+		insert := kn.patchInsert(true) // allow overwrites
+		var b [16]byte
+		var n int
+		var err error
+		for i := 0; i < int(info.Count); i++ {
+			n, err = r.Read(b[:])
+			if n != 8 || err != nil {
+				break
+			}
+			insert(b[:8], binary.BigEndian.Uint64(b[8:]))
+		}
+	}
+
+	return
 }
 
 /*
+
 	KEVA utility and information methods
 		sizer
 		Len, Cap, Ratio, Ident
@@ -266,14 +314,6 @@ func (kn *KEVA) Checksum() (checksum uint64) {
 //	this represents the creation or the base disk image loaded
 func (kn *KEVA) Origin() int64 { return kn.origin }
 
-// calculate target index locations using the current key hash via XOR with prime mixing
-func (kn *KEVA) calculate(idx *[4]uint64) {
-	// idx[3:kn.hloc] holds hash of key
-	idx[0] = kn.width * (idx[kn.hloc] % kn.depth)
-	idx[1] = kn.width * ((idx[kn.hloc] ^ 11400714785074694791) % kn.depth) // prime1 11400714785074694791
-	idx[2] = kn.width * ((idx[kn.hloc] ^ 9650029242287828579) % kn.depth)  // prime4 9650029242287828579
-}
-
 // Len is number of current entries.
 func (kn *KEVA) Len() uint64 { return kn.count }
 
@@ -286,6 +326,14 @@ func (kn *KEVA) Ratio() uint64 {
 		return 0
 	}
 	return kn.count * 100 / kn.max
+}
+
+// calculate target index locations using the current key hash via XOR with prime mixing
+func (kn *KEVA) calculate(idx *[4]uint64) {
+	// idx[0] holds hash of key
+	idx[1] = kn.width * (idx[0] % kn.depth)
+	idx[2] = kn.width * ((idx[0] ^ 11400714785074694791) % kn.depth) // prime1 11400714785074694791
+	idx[3] = kn.width * ((idx[0] ^ 9650029242287828579) % kn.depth)  // prime4 9650029242287828579
 }
 
 /*
@@ -308,13 +356,13 @@ func (kn *KEVA) Lookup() func(key []byte) (item struct {
 		Ok    bool
 	}) {
 
-		idx[kn.hloc] = xxhash.Sum(key)
+		idx[0] = xxhash.Sum(key)
 		kn.calculate(&idx)
 
-		for i = 0; i < kn.hloc; i++ {
+		for i = 1; i < 4; i++ {
 			for j = 0; j < kn.width; j++ {
 				n = idx[i] + j
-				if kn.key[n] == idx[kn.hloc] {
+				if kn.key[n] == idx[0] {
 					item.Value = kn.value[n]
 					item.Ok = true
 					return
@@ -330,7 +378,7 @@ func (kn *KEVA) Lookup() func(key []byte) (item struct {
 //	Ok    key is valid
 //	Exist found in table
 func (kn *KEVA) Remove() func([]byte) struct{ Ok, Exist bool } { return kn.remove(xxhash.Sum) }
-func (kn *KEVA) RawRemove() func([]byte) struct{ Ok, Exist bool } {
+func (kn *KEVA) patchRemove() func([]byte) struct{ Ok, Exist bool } {
 	return kn.remove(func(raw []byte) uint64 { return binary.BigEndian.Uint64(raw) })
 }
 
@@ -341,14 +389,14 @@ func (kn *KEVA) remove(encoder func([]byte) uint64) func(key []byte) struct{ Ok,
 
 	return func(key []byte) (item struct{ Ok, Exist bool }) {
 
-		idx[kn.hloc] = encoder(key) // eg. xxhash.Sum(key)
+		idx[0] = encoder(key) // eg. xxhash.Sum(key)
 		kn.calculate(&idx)
-		item.Ok = idx[kn.hloc] != 0
+		item.Ok = idx[0] != 0
 
-		for i = 0; i < kn.hloc; i++ {
+		for i = 1; i < 4; i++ {
 			for j = 0; j < kn.width; j++ {
 				n = idx[i] + j
-				if kn.key[n] == idx[kn.hloc] {
+				if kn.key[n] == idx[0] {
 					if j != kn.width-1 {
 						// [ a b c ] -> [ a b 0 ] remove c by clear tail
 						// [ a b c ] -> [ a c 0 ] remove b by c << 1 and clear tail
@@ -378,7 +426,7 @@ func (kn *KEVA) remove(encoder func([]byte) uint64) func(key []byte) struct{ Ok,
 func (kn *KEVA) Insert(update bool) func([]byte, uint64) struct{ Ok, Exist, NoSpace bool } {
 	return kn.insert(update, xxhash.Sum)
 }
-func (kn *KEVA) RawInsert(update bool) func([]byte, uint64) struct{ Ok, Exist, NoSpace bool } {
+func (kn *KEVA) patchInsert(update bool) func([]byte, uint64) struct{ Ok, Exist, NoSpace bool } {
 	return kn.insert(update, func(raw []byte) uint64 { return binary.BigEndian.Uint64(raw) })
 }
 func (kn *KEVA) insert(update bool, encoder func([]byte) uint64) func([]byte, uint64) struct{ Ok, Exist, NoSpace bool } {
@@ -400,13 +448,13 @@ func (kn *KEVA) insert(update bool, encoder func([]byte) uint64) func([]byte, ui
 			return
 		}
 
-		idx[kn.hloc] = encoder(key)
+		idx[0] = encoder(key)
 		kn.calculate(&idx)
 		empty = false
 
 		// verify not already present in any target index location
 		// and record the next empty insertion point during check
-		for i = 0; i < kn.hloc; i++ {
+		for i = 1; i < 4; i++ {
 			for j = 0; j < kn.width; j++ {
 				n = idx[i] + j
 				if kn.key[n] == 0 {
@@ -416,7 +464,7 @@ func (kn *KEVA) insert(update bool, encoder func([]byte) uint64) func([]byte, ui
 					}
 					continue
 				}
-				if kn.key[n] == idx[kn.hloc] {
+				if kn.key[n] == idx[0] {
 					item.Exist = true
 					item.Ok = update
 					return
@@ -426,7 +474,7 @@ func (kn *KEVA) insert(update bool, encoder func([]byte) uint64) func([]byte, ui
 
 		// insert the new key at ix,jx target
 		if empty {
-			kn.key[idx[ix]+jx] = idx[kn.hloc]
+			kn.key[idx[ix]+jx] = idx[0]
 			kn.value[idx[ix]+jx] = value
 			kn.count++
 			item.Ok = true
@@ -443,26 +491,26 @@ func (kn *KEVA) insert(update bool, encoder func([]byte) uint64) func([]byte, ui
 
 			for {
 				rand.Read(random[:])
-				ix = idx[binary.BigEndian.Uint64(random[:8])%kn.hloc] // select random altenate index to use
-				n = ix + (uint64(random[7]) % kn.width)               // select random key to displace and swap
-				node = [2]uint64{ix, idx[kn.hloc]}                    // cyclic node generation; index and key
-				cyclic[node]++                                        // cyclic recurrent node movement tracking
+				ix = idx[1+binary.BigEndian.Uint64(random[:8])%3] // select random altenate index to use
+				n = ix + (uint64(random[7]) % kn.width)           // select random key to displace and swap
+				node = [2]uint64{ix, idx[0]}                      // cyclic node generation; index and key
+				cyclic[node]++                                    // cyclic recurrent node movement tracking
 				if cyclic[node] > uint8(kn.width) || len(cyclic) == kn.tracker {
 					break // reset cyclic path tracker and jump shuffle by picking a new random index
 					// and key to displace, as this gives us about ~2x faster performance boost by
 					// locating an open slot faster rather than cycling back over prior shifts
 				}
 
-				kn.key[n], idx[kn.hloc] = idx[kn.hloc], kn.key[n] // swap keys to displace the key
-				kn.value[n], displace = displace, kn.value[n]     // swap values to displace the value
-				kn.calculate(&idx)                                // generate index set for displaced key
+				kn.key[n], idx[0] = idx[0], kn.key[n]         // swap keys to displace the key
+				kn.value[n], displace = displace, kn.value[n] // swap values to displace the value
+				kn.calculate(&idx)                            // generate index set for displaced key
 
-				for i = 0; i < kn.hloc-1; i++ { // attempt to insert displaced key in alternate location
+				for i = 1; i < 4; i++ { // attempt to insert displaced key in alternate location
 					if idx[i] != ix { // avoid the common index between key and displaced key
 						for j = 0; j < kn.width; j++ {
 							n = idx[i] + j
 							if kn.key[n] == 0 { // a new location for displaced key and value
-								kn.key[n] = idx[kn.hloc]
+								kn.key[n] = idx[0]
 								kn.value[n] = displace
 								kn.count++
 								item.Ok = true
