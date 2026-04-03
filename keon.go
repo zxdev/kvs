@@ -226,7 +226,7 @@ func (kn *KEON) Packager(w io.Writer, action int) {
 
 }
 
-// Patcher applies a patch data package
+// Patcher applies a patch data package and updates the origin
 func (kn *KEON) Patcher(r io.Reader) (info struct {
 	Signature uint64
 	Checksum  uint64
@@ -241,6 +241,7 @@ func (kn *KEON) Patcher(r io.Reader) (info struct {
 	info.Checksum = binary.BigEndian.Uint64(header[8:16])
 	info.Origin = binary.BigEndian.Uint64(header[16:24])
 	info.Count = binary.BigEndian.Uint64(header[24:32])
+	kn.origin = int64(info.Origin)
 
 	// detect action by signature
 	switch info.Signature {
