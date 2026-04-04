@@ -1,0 +1,40 @@
+# build linux/amd64 on macOS
+FROM --platform=linux/amd64 golang:alpine as base
+
+RUN adduser \
+  --disabled-password \
+  --gecos "" \
+  --home "/nonexistent" \
+  --shell "/sbin/nologin" \
+  --no-create-home \
+  --uid 65532 \
+  scratcher
+
+WORKDIR /app
+
+COPY . .
+
+RUN go mod download
+RUN go mod verify
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+-trimpath \
+-o /server server/keva/main.go
+
+FROM scratch
+
+LABEL org.opencontainers.image.source=https://github.com/zxdev/kvs
+LABEL org.opencontainers.image.description="kvs container"
+LABEL org.opencontainers.image.licenses=MIT
+
+COPY --from=base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=base /etc/passwd /etc/passwd
+COPY --from=base /etc/group /etc/group
+COPY --from=base /server .
+
+USER  scratcher:scratcher
+
+EXPOSE 80
+ENV HOST=localhost:80
+
+CMD ["./server"]
