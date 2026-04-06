@@ -107,8 +107,7 @@ func SaveKEON(path string, kn *KEON) (ok bool) {
 
 */
 
-// Importer reads the header:keon from the io.Reader and returns
-// the keon origin unix timestamp
+// Importer reads the header:keon from the io.Reader
 func (kn *KEON) Importer(r io.Reader) (ok bool) {
 
 	var header [80]byte
@@ -152,15 +151,6 @@ func (kn *KEON) Importer(r io.Reader) (ok bool) {
 	return true
 }
 
-// func (kn *KEON) Write(path string) bool {
-// 	f, err := os.Create(path)
-// 	if err != nil {
-// 		return false
-// 	}
-// 	defer f.Close()
-// 	return kn.Exporter(f)
-// }
-
 // Exporter writes the header:keon to the io.Writer
 func (kn *KEON) Exporter(w io.Writer) (ok bool) {
 
@@ -189,6 +179,16 @@ func (kn *KEON) Exporter(w io.Writer) (ok bool) {
 	}
 
 	return true
+}
+
+// Write a disk image
+func (kn *KEON) Write(path string) bool {
+	f, err := os.Open(path)
+	if err == nil {
+		defer f.Close()
+		defer kn.Exporter(f)
+	}
+	return false
 }
 
 // Packager exports a patch data package excluding empty buckets

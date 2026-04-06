@@ -113,8 +113,7 @@ func SaveKEVA(path string, kn *KEVA) (ok bool) {
 
 */
 
-// Importer reads the header:keon from the io.Reader and returns
-// the keon origin unix timestamp
+// Importer reads the header:keon from the io.Reader
 func (kn *KEVA) Importer(r io.Reader) (ok bool) {
 
 	var header [80]byte
@@ -188,6 +187,16 @@ func (kn *KEVA) Exporter(w io.Writer) (ok bool) {
 	}
 
 	return true
+}
+
+// Write a disk image
+func (kn *KEVA) Write(path string) bool {
+	f, err := os.Open(path)
+	if err == nil {
+		defer f.Close()
+		return kn.Exporter(f)
+	}
+	return false
 }
 
 // Packager exports a patch data package excluding empty buckets

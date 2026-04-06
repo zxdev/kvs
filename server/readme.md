@@ -36,9 +36,10 @@ The KVS is a highly compresses and performant in memory database capabable of mi
         '100m' (100 million)
         custom 'n' size 
     
-        'reset' restores most recent size configuration
-
-        'drop' or '0' will clear database from memory
+        'reset' drop and reset the kvs object using the most recent size configuration
+        'drop' or '0' will clear database from memory 
+        
+        When no object is avilable the services will return 503 errors until a new kvs object is available
     
 * **/stats** 
 
@@ -51,9 +52,33 @@ The KVS is a highly compresses and performant in memory database capabable of mi
     ```
 
 
+*   **/load?{resource}**
+
+        Can be a local filename stored under the local /var directory or a load from a remote url
+        Pass the resouce as raw query without setting a parameter key 
+
+        For example, pass 'dedup' as the resouce to load the file from the local /var directory
+
+        200 success
+        424 failed dependancy on failure
+
+
+* **/storage?{resouce}**
+
+        Will store the current object as a local file under /var directory
+        Pass the resouce name as raw query without setting a parameter key
+
+        For example, pass 'dedup' as the resouc stores the current kvs object in the local /var directory
+        Pass 'drop' prepended to the local filename to remove the kvs object from the local filesystem (eg. drop:dedup)
+
+        200 success
+        424 failed dependancy on failure
+
+
 ### KEON specific endpoints
 
     200 success
+    400 insert failed
     503 unavailable when no database configured
 
     GET single item
@@ -93,9 +118,11 @@ bulk item insertion requires an \n delimited list of items as the post body payl
 ### KEVA specific endpoints
 
     {string:uint64} is the key:value block format
-    the value can represent anything and using a simple codex information can be stored as a numerically equivalent bit object|flag set
+
+    the value can represent anything and using a simple codex any type of information can be bit encoded and stored as a numerically equivalent bit object|flag set; encode/decode must be handled on the client side
 
     200 success
+    400 insert failed
     503 unavailable when no database configured
 
     GET single item {string:uint64}

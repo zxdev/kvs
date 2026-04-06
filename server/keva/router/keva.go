@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/zxdev/kvs"
 )
@@ -83,6 +85,89 @@ func (kn *KEVAServer) CreateHandler() http.HandlerFunc {
 
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(&resp)
+
+	}
+}
+
+// Load handler for local /var load or remote url object load
+//
+// .../load?{resource}
+func (kn *KEVAServer) LoadHandler() http.HandlerFunc {
+
+	var dir = "/var"
+
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		kn.Lock()
+		defer kn.Unlock()
+
+		// using the raw query allows a local or remote request
+		// and is the only thing passed; skipping the parameter
+		resource := r.URL.RawQuery
+		if len(resource) > 0 {
+			if strings.Contains(resource, "://") {
+				client := http.Client{
+					Timeout: time.Second * 30,
+				}
+				resp, err := client.Get(resource)
+				if err == nil && kn.keva.Importer(resp.Body) {
+					w.WriteHeader(http.StatusOK) // 200
+					return
+				}
+
+			} else {
+
+				f, err := os.Open(filepath.Join(dir, filepath.Base(resource)))
+				if err == nil && kn.keva.Importer(f) {
+					f.Close()
+					w.WriteHeader(http.StatusOK) // 200
+					return
+				}
+
+			}
+		}
+
+		w.WriteHeader(http.StatusFailedDependency) // 424
+
+	}
+
+}
+
+// / Store handler for local /var storage
+//
+//	pass drop:{resource} to delete the local object
+//
+// .../store?{resource}
+func (kn *KEVAServer) StoreHandler() http.HandlerFunc {
+
+	var dir = "/var"
+
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		kn.Lock()
+		defer kn.Unlock()
+
+		// using the raw query allows for consistency with the
+		// load endpoint; using rawquery and skipping parameter
+		resource := r.URL.RawQuery
+		if len(resource) > 0 {
+			if strings.HasPrefix(resource, "drop:") {
+				if os.Remove(filepath.Join(dir, filepath.Base(resource[5:]))) == nil {
+					w.WriteHeader(http.StatusOK) // 200
+					return
+				}
+
+			} else {
+				f, err := os.Create(filepath.Join(dir, filepath.Base(resource)))
+				if err == nil && kn.keva.Exporter(f) {
+					f.Close()
+					w.WriteHeader(http.StatusOK) // 200
+					return
+				}
+			}
+		}
+
+		w.WriteHeader(http.StatusFailedDependency) // 424
 
 	}
 }

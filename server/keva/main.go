@@ -32,8 +32,10 @@ func main() {
 
 	log.Println("server: keva format")
 	var route router.KEVAServer
-	mux.Handle("GET /create/{size}", route.CreateHandler())
-	mux.Handle("GET /stats", route.StatusHandler())
+	mux.Handle("/create/{size}", route.CreateHandler())
+	mux.Handle("/load", route.LoadHandler())
+	mux.Handle("/store", route.StoreHandler())
+	mux.Handle("/stats", route.StatusHandler())
 	mux.Handle("GET /insert/{key}", route.InsertHandler())
 	mux.Handle("POST /insert", route.InsertHandler())
 	mux.Handle("GET /remove/{key}", route.RemoveHandler())

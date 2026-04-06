@@ -33,6 +33,8 @@ func main() {
 	log.Println("server: keon format")
 	var kns router.KEONServer
 	mux.Handle("/create/{size}", kns.CreateHandler())
+	mux.Handle("/load", kns.LoadHandler())
+	mux.Handle("/store", kns.StoreHandler())
 	mux.Handle("/stats", kns.StatusHandler())
 	mux.Handle("GET /insert/{key}", kns.InsertHandler())
 	mux.Handle("POST /insert", kns.InsertHandler())
