@@ -143,7 +143,7 @@ func (kn *KEVA) Importer(r io.Reader) (ok bool) {
 	var err error
 	for i := range kn.key {
 		n, err = r.Read(b[:])
-		if n != 8 || err != nil {
+		if n != 16 || err != nil {
 			break
 		}
 		kn.key[i] = binary.BigEndian.Uint64(b[:8])
