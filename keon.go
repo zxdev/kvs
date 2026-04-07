@@ -35,6 +35,9 @@ import (
 	}
 */
 
+// Keon signature
+const KeonSignature = 0xff01
+
 // KEON is a set-only hash table structure
 type KEON struct {
 	name              string   // source name
@@ -100,11 +103,10 @@ func SaveKEON(path string, kn *KEON) (ok bool) {
 }
 
 /*
+keon package level generational functions
 
-	keon package level generational functions
-		Importer, Exporter
-		Packager, Patcher
-
+	Importer, Exporter
+	Packager, Patcher
 */
 
 // Importer reads the header:keon from the io.Reader
@@ -114,7 +116,14 @@ func (kn *KEON) Importer(r io.Reader) (ok bool) {
 	r.Read(header[:])
 
 	// validate keon signature 0xff01
-	if binary.BigEndian.Uint64(header[:8]) != 0xff01 {
+	if binary.BigEndian.Uint64(header[:8]) != KeonSignature {
+		return
+	}
+
+	// read the header before processing the payload because we
+	// can abort when we are attempting to load the same object
+	// and can be detected by testing CHECKSUM values
+	if binary.BigEndian.Uint64(header[8:16]) == kn.Checksum() {
 		return
 	}
 
@@ -143,7 +152,7 @@ func (kn *KEON) Importer(r io.Reader) (ok bool) {
 		kn.key[i] = binary.BigEndian.Uint64(b[:])
 	}
 
-	// validate the keon header match
+	// validate the header and object CHECKSUM match
 	if binary.BigEndian.Uint64(header[8:16]) != kn.Checksum() {
 		return
 	}
@@ -159,7 +168,7 @@ func (kn *KEON) Exporter(w io.Writer) (ok bool) {
 	var err error
 	var b [8]byte
 	for _, v := range []uint64{
-		0xff01, kn.Checksum(), uint64(time.Now().Unix()),
+		KeonSignature, kn.Checksum(), uint64(time.Now().Unix()),
 		kn.count, kn.max, kn.depth, kn.width, kn.density, kn.shuffler, uint64(kn.tracker),
 	} {
 		binary.BigEndian.PutUint64(b[:], v)
@@ -203,7 +212,7 @@ func (kn *KEON) Packager(w io.Writer, action int) {
 	var err error
 	var b [8]byte
 	for _, v := range []uint64{
-		0xff01 | uint64(action+1)<<4, kn.Checksum(), uint64(time.Now().Unix()), kn.count,
+		KeonSignature | uint64(action+1)<<4, kn.Checksum(), uint64(time.Now().Unix()), kn.count,
 	} {
 		binary.BigEndian.PutUint64(b[:], v)
 		n, err = w.Write(b[:])
@@ -245,7 +254,7 @@ func (kn *KEON) Patcher(r io.Reader) (info struct {
 
 	// detect action by signature
 	switch info.Signature {
-	case 0xff11: // remove
+	case KeonSignature | 1<<4: // 0xff11 remove
 
 		remove := kn.patchRemove()
 		var b [8]byte
@@ -259,7 +268,7 @@ func (kn *KEON) Patcher(r io.Reader) (info struct {
 			remove(b[:])
 		}
 
-	case 0xff21: // insert
+	case KeonSignature | 2<<4: // 0xff21 insert
 
 		insert := kn.patchInsert(true) // allow overwrites
 		var b [8]byte

@@ -648,14 +648,30 @@ func TestMerge(t *testing.T) {
 
 func TestImporter(t *testing.T) {
 
+	/*
+		=== RUN   TestImporter
+		    kvs_test.go:654: true
+		    kvs_test.go:655: 1736479792
+		    kvs_test.go:656: 4090011985328933031
+		    kvs_test.go:657: 1288707
+		    kvs_test.go:658: 1105864
+		    kvs_test.go:661: false
+		    kvs_test.go:664: true
+		--- PASS: TestImporter (0.61s)
+		PASS
+	*/
+
 	f, _ := os.Open("sandbox/gdim.keon")
 	defer f.Close()
 	var kn kvs.KEON
-	kn.Importer(f)
+	t.Log(kn.Importer(f)) // new so true
 	t.Log(kn.Origin())
 	t.Log(kn.Checksum())
 	t.Log(kn.Cap())
 	t.Log(kn.Len())
+
+	f.Seek(0, 0)
+	t.Log(kn.Importer(f)) // existing so false
 
 	lookup := kn.Lookup()
 	t.Log(lookup([]byte("google.com")))

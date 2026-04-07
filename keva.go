@@ -36,6 +36,9 @@ import (
 	}
 */
 
+// Keva signature
+const KevaSignature = 0xff02
+
 // KEVA is a set-only hash table structure
 type KEVA struct {
 	name              string   // source name
@@ -120,7 +123,14 @@ func (kn *KEVA) Importer(r io.Reader) (ok bool) {
 	r.Read(header[:])
 
 	// validate KEVA signature 0xff02
-	if binary.BigEndian.Uint64(header[:8]) != 0xff02 {
+	if binary.BigEndian.Uint64(header[:8]) != KevaSignature {
+		return
+	}
+
+	// read the header before processing the payload because we
+	// can abort when we are attempting to load the same object
+	// and can be detected by testing CHECKSUM values
+	if binary.BigEndian.Uint64(header[8:16]) == kn.Checksum() {
 		return
 	}
 
@@ -150,7 +160,7 @@ func (kn *KEVA) Importer(r io.Reader) (ok bool) {
 		kn.value[i] = binary.BigEndian.Uint64(b[8:])
 	}
 
-	// validate the CHECKSUM match
+	// validate the header and object CHECKSUM match
 	if binary.BigEndian.Uint64(header[8:16]) != kn.Checksum() {
 		return
 	}
@@ -166,7 +176,7 @@ func (kn *KEVA) Exporter(w io.Writer) (ok bool) {
 	var err error
 	var b [16]byte
 	for _, v := range []uint64{
-		0xff02, kn.Checksum(), uint64(time.Now().Unix()),
+		KevaSignature, kn.Checksum(), uint64(time.Now().Unix()),
 		kn.count, kn.max, kn.depth, kn.width, kn.density, kn.shuffler, uint64(kn.tracker),
 	} {
 		binary.BigEndian.PutUint64(b[:8], v)
@@ -211,7 +221,7 @@ func (kn *KEVA) Packager(w io.Writer, action int) {
 	var err error
 	var b [16]byte
 	for _, v := range []uint64{
-		0xff02 | uint64(action+1)<<4, kn.Checksum(), uint64(time.Now().Unix()), kn.count,
+		KevaSignature | uint64(action+1)<<4, kn.Checksum(), uint64(time.Now().Unix()), kn.count,
 	} {
 		binary.BigEndian.PutUint64(b[:8], v)
 		n, err = w.Write(b[:8])
@@ -254,7 +264,7 @@ func (kn *KEVA) Patcher(r io.Reader) (info struct {
 
 	// detect action by signature
 	switch info.Signature {
-	case 0xff12: // remove
+	case KevaSignature | 1<<4: // 0xff12 remove
 
 		remove := kn.patchRemove()
 		var b [16]byte
@@ -268,7 +278,7 @@ func (kn *KEVA) Patcher(r io.Reader) (info struct {
 			remove(b[:8])
 		}
 
-	case 0xff22: // insert
+	case KevaSignature | 2<<4: // 0xff22 insert
 
 		insert := kn.patchInsert(true) // allow overwrites
 		var b [16]byte
