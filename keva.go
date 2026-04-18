@@ -201,7 +201,7 @@ func (kn *KEVA) Exporter(w io.Writer) (ok bool) {
 
 // Write a disk image
 func (kn *KEVA) Write(path string) bool {
-	f, err := os.Open(path)
+	f, err := os.Create(path)
 	if err == nil {
 		defer f.Close()
 		return kn.Exporter(f)

@@ -192,7 +192,7 @@ func (kn *KEON) Exporter(w io.Writer) (ok bool) {
 
 // Write a disk image
 func (kn *KEON) Write(path string) bool {
-	f, err := os.Open(path)
+	f, err := os.Create(path)
 	if err == nil {
 		defer f.Close()
 		defer kn.Exporter(f)
