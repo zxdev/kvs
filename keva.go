@@ -206,7 +206,7 @@ func (kn *KEVA) Write(path string) bool {
 		defer f.Close()
 		return kn.Exporter(f)
 	}
-	return false
+	return err == nil
 }
 
 // Packager exports a patch data package excluding empty buckets

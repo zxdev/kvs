@@ -197,7 +197,7 @@ func (kn *KEON) Write(path string) bool {
 		defer f.Close()
 		defer kn.Exporter(f)
 	}
-	return false
+	return err == nil
 }
 
 // Packager exports a patch data package excluding empty buckets
