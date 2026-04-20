@@ -191,7 +191,7 @@ func (kn *KEVA) Exporter(w io.Writer) (ok bool) {
 		binary.BigEndian.PutUint64(b[:8], kn.key[i])
 		binary.BigEndian.PutUint64(b[8:], kn.value[i])
 		n, err = w.Write(b[:])
-		if n != 8 || err != nil {
+		if n != 16 || err != nil {
 			return
 		}
 	}
