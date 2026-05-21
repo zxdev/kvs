@@ -9,6 +9,31 @@ import (
 	"github.com/zxdev/kvs"
 )
 
+// func TestLoadKeon(t *testing.T) {
+
+// 	var kn = kvs.NewKEON(6000, nil)
+// 	t.Log("build")
+// 	insert := kn.Insert(false)
+// 	f, err := os.Open("testdata/alexa-5129")
+// 	if err != nil {
+// 		t.Log(err)
+// 		return
+// 	}
+// 	scanner := bufio.NewScanner(f)
+// 	for scanner.Scan() {
+// 		insert(scanner.Bytes())
+// 	}
+// 	f.Close()
+// 	t.Log("len  ", kn.Len())
+
+// 	t.Log("write", kn.Write("testdata/alexa-5129.keon"))
+
+// 	var kn2 kvs.KEON
+// 	t.Log("load", kvs.LoadKEON("testdata/alexa-5129.keon", &kn2))
+// 	t.Log("len  ", kn.Len())
+
+// }
+
 // go test -v -run KEON
 func TestKEON(t *testing.T) {
 

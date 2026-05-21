@@ -131,7 +131,7 @@ func (kn *KEVA) Importer(r io.Reader) (ok bool) {
 	// can abort when we are attempting to load the same object
 	// and can be detected by testing CHECKSUM values
 	if binary.BigEndian.Uint64(header[8:16]) == kn.Checksum() {
-		return
+		return true
 	}
 
 	// configure keon settings from header metadata
@@ -161,11 +161,8 @@ func (kn *KEVA) Importer(r io.Reader) (ok bool) {
 	}
 
 	// validate the header and object CHECKSUM match
-	if binary.BigEndian.Uint64(header[8:16]) != kn.Checksum() {
-		return
-	}
+	return binary.BigEndian.Uint64(header[8:16]) == kn.Checksum()
 
-	return true
 }
 
 // Exporter writes the header:keva to the io.Writer
